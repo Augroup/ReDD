@@ -1,0 +1,103 @@
+rule Unzip:
+    input:
+        "fastq/{sample}.*.gz"
+    output:
+        "fastq/{sample}.fastq"
+    shell:
+        "zcat {input} > {output}"
+rule fq2fastq:
+    input:
+        "fastq/{sample}.fq"
+    output:
+        "fastq/{sample}.fastq"
+    shell:
+        "cp {input} {output}"
+rule NanoFilt:
+    input:
+        multiext("fastq/{sample}",'.fastq','.fq')
+    output:
+        "fastq/{sample}.filtered.fastq"
+    shell:
+        "cat {input} | NanoFilt -q 0 --headcrop 5 --tailcrop 3 --readtype 1D > {output}"
+rule U2T:
+    input:
+        "fastq/{sample}.filtered.fastq"
+    output:
+        "fastq/{sample}.U2T.fastq"
+    shell:
+        """awk '{{ if (NR%4 == 2) {{gsub(/U/,"T",$1); print $1}} else print }}' {input} > {output}"""
+rule minimap2:
+    input:
+        ref = "reference/genome.fa",
+        fastq = "fastq/{sample}.U2T.fastq"
+    output:
+        "mapped_reads/{sample}.raw.sam"
+    threads: 28
+    shell:
+        "minimap2 -G200k --secondary=no -ax splice -uf -k14 -t {threads} {input.ref} {input.fastq} > {output}"
+rule filter_sam:
+    input:
+        "mapped_reads/{sample}.raw.sam"
+    output:
+        "mapped_reads/{sample}.sam"
+    shell:
+        """samtools view -H {input} > {output}; cat {input} | awk '{{if(($2=="0")||($2=="16")) print $0}}' >> {output}"""
+rule samtools_sort:
+    input:
+        "mapped_reads/{sample}.sam"
+    output:
+        "mapped_reads/{sample}.sorted.bam"
+    threads: 28
+    shell:
+        "samtools view -bS {input} | samtools sort -@ {threads} -o {output}"
+rule samtools_index:
+    input:
+        "mapped_reads/{sample}.sorted.bam"
+    output:
+        "mapped_reads/{sample}.sorted.bam.bai"
+    threads: 28
+    shell:
+        "samtools index -@ {threads} {input}"
+rule nanopolish_index:
+    input:
+        fast5_dir = "fast5/{sample}/",
+        fastq = "fastq/{sample}.U2T.fastq"
+    output:
+        "fastq/{sample}.U2T.fastq.index"
+    shell:
+        "nanopolish index -d {input.fast5_dir} {input.fastq}"
+rule nanopolish_eventalign:
+    input:
+        rules.nanopolish_index.output,
+        rules.samtools_index.output,
+        fastq = "fastq/{sample}.U2T.fastq",
+        bam = "mapped_reads/{sample}.sorted.bam",
+        ref = "reference/genome.fa"
+    output:
+        "eventalign/{sample}_eventalign.txt"
+    threads: 28
+    shell:
+        "nanopolish eventalign --reads {input.fastq} --bam {input.bam} --genome {input.ref} --samples -t {threads} --print-read-names --signal-index --scale-events > {output}"
+def get_candidate_name(sample):
+    return "candidates/" + str(sample).split('_')[0] + '.candidate_sites.tab'
+rule extract_signals:
+    input:
+        ref = "reference/genome.fa",
+        summary = "summary/{sample}_summary.txt",
+        bam = "mapped_reads/{sample}.sorted.bam",
+        event = "eventalign/{sample}_eventalign.txt",
+        candidate=get_candidate_name
+    params:
+        center="A",
+        nt=4,
+        featurenum=5,
+        buffersize=1000,
+        labeltype="I"
+    output:
+        "cache/{sample}.hdf5"
+    threads: 28
+    shell:
+        """python scripts/extract_bin_data_multithread_0base.py --center {params.center} --nt {params.nt} --labeltype {params.labeltype} --maxbuffer_size {params.buffersize} --featurenum {params.featurenum} \
+--Ref {input.ref} --summaryIn {input.summary} --samIn {input.bam} --eventIn {input.event} --cachefile {output} --THREADS {threads} --candidate_file {input.candidate}"""
+    
+    
