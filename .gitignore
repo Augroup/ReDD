@@ -1,12 +1,7 @@
-workflow/.snakemake
-workflow/cache
-workflow/fastq/
-workflow/mapped_reads/
-workflow/fast5/
-workflow/reference/
-workflow/eventalign/
-workflow/candidates/
-workflow/summary/
+.snakemake
+intermediates/
+outputs/
 slurm*out
 Mambaforge-Linux-x86_64.sh
+.snakemake
 

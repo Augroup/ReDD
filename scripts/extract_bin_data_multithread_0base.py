@@ -170,7 +170,7 @@ def extract_base_from_sam(molecule,ref_chr,sam_info):
     
     #print(ss)
     #print(ed)
-    for i in seq_frags_call: #not i is 1-based not 0-based!
+    for i in seq_frags_call: #i is 1-based not 0-based!
         region=[]
         for i1 in range(i-nt-1,i+nt):
             if i1<0 or i1>ed-1 or (i1 not in ss) or ss[i1]==None: #ss[il]=i in call
@@ -264,6 +264,7 @@ def process_signal_for_one_read(read_id,mole,summary_one_read,read_information,r
         info_list.append(info_)
     
     return fragments,labels_ref,labels_call,info_list
+
 def get_summary_and_sam_info(read_id_set):
     sam_info={} #load all sam_info into memory
     with pysam.AlignmentFile(samIn, "rb") as samfile:
@@ -591,7 +592,7 @@ if __name__ == "__main__":
            for line in file:
                chr_ = line.split()[0]
                pos_ = line.split()[1]
-               if len(line.split("\t"))<8:
+               if len(line.split("\t"))<9:
                   candidate_sites[chr_+"-"+pos_]=float(line.split("\t")[3])
                else:
                   candidate_sites[chr_+"-"+pos_]=float(line.split("\t")[8])
