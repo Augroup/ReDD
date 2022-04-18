@@ -177,6 +177,7 @@ rule extract_signals:
         featurenum=5,
         buffersize=1000,
         labeltype="I"
+        ref_dump_position = "disk"
     output:
         "intermediates/cache/{sample}_{scatteritem}.hdf5",
     threads: 28
@@ -184,8 +185,8 @@ rule extract_signals:
         runtime=24 * 60
         
     shell:
-        """python scripts/extract_bin_data_multithread_0base.py --center {params.center} --nt {params.nt} --labeltype {params.labeltype} --maxbuffer_size {params.buffersize} --featurenum {params.featurenum} \
---Ref {input.ref} --summaryIn {input.summary} --samIn {input.bam} --eventIn {input.event} --cachefile {output} --THREADS {threads}"""
+        """python scripts/extract_bin_data_multithread.py --center {params.center} --nt {params.nt} --labeltype {params.labeltype} --maxbuffer_size {params.buffersize} --featurenum {params.featurenum} \
+--Ref {input.ref} --summaryIn {input.summary} --samIn {input.bam} --eventIn {input.event} --cachefile {output} --ref_dump_position {params.ref_dump_position} --THREADS {threads}"""
 
 rule merge_fast5:
     input:
