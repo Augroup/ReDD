@@ -176,7 +176,7 @@ rule extract_signals:
         nt=4,
         featurenum=5,
         buffersize=1000,
-        labeltype="I"
+        labeltype="I",
         ref_dump_position = "disk"
     output:
         "intermediates/cache/{sample}_{scatteritem}.hdf5",
@@ -185,18 +185,44 @@ rule extract_signals:
         runtime=24 * 60
         
     shell:
-        """python scripts/extract_bin_data_multithread.py --center {params.center} --nt {params.nt} --labeltype {params.labeltype} --maxbuffer_size {params.buffersize} --featurenum {params.featurenum} \
+        """python scripts/extract_bin_data.py --center {params.center} --nt {params.nt} --labeltype {params.labeltype} --maxbuffer_size {params.buffersize} --featurenum {params.featurenum} \
 --Ref {input.ref} --summaryIn {input.summary} --samIn {input.bam} --eventIn {input.event} --cachefile {output} --ref_dump_position {params.ref_dump_position} --THREADS {threads}"""
-
-rule merge_fast5:
+rule predict:
     input:
-        gather.split("intermediates/cache/{{sample}}_{scatteritem}.hdf5")
+         "intermediates/cache/{sample}_{scatteritem}.hdf5",
     output:
-        "outputs/{sample}_fast5_list.txt"
+         "intermediates/{sample}_{scatteritem}.prediction.txt",
+    params:
+        device='CPU',     #required, select from 'CPU' 'GPU'
+        batch_size=10000, #not required, but can be an optional param for user
+        model='general' #let the user select from 'general' 'HEK293T_specific' 'GM12878_specific' 'stemcell_specific'
+    threads: 5
+    resources:
+        runtime=5 * 60
+    
+    shell:
+        """python scripts/predict.py --device {params.device} --threads {threads} --batch_size {params.batch_size} --weights_dir  scripts/models/{params.model}.ckpt --test_cachedata {input} --test_outputfile {output} """
+
+
+rule merge_predicts:
+    input:
+        gather.split("intermediates/{{sample}}_{scatteritem}.prediction.txt")
+    output:
+        "outputs/{sample}.prediction.txt"
     threads: 1
     resources:
-        runtime=5
-        
+        runtime= 5
     shell:
-        "ls {input} > {output}"
+        "cat {input} > {output}"
+# rule merge_fast5:
+#     input:
+#         gather.split("intermediates/cache/{{sample}}_{scatteritem}.hdf5")
+#     output:
+#         "outputs/{sample}_fast5_list.txt"
+#     threads: 1
+#     resources:
+#         runtime=5
+        
+#     shell:
+#         "ls {input} > {output}"
     

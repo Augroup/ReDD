@@ -18,4 +18,4 @@ ln -s /fs/project/PCON0009/Au-scratch2/haoran/reference/genecode/GRCh38.primary_
 cd ../
 
 
-snakemake -c 9 -p outputs/H9-hESC_fast5_list.txt --cluster "sbatch -A PCON0009 -t {resources.runtime} -N 1 -c {threads}" --jobs 3 --set-scatter split=3
+snakemake -c 9 -p outputs/H9-hESC.prediction.txt --cluster "sbatch -A PCON0009 -t {resources.runtime} -N 1 -c {threads}" --jobs 3 --set-scatter split=3

@@ -2,7 +2,7 @@
 ```
 wget https://github.com/conda-forge/miniforge/releases/latest/download/Mambaforge-Linux-x86_64.sh
 bash Mambaforge-Linux-x86_64.sh
-mamba create -n AIediting --file environment.yaml
+mamba env create -n AIediting --file environment.yaml
 ```
 # Usage
 ```
