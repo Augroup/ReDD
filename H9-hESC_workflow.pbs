@@ -14,8 +14,7 @@ mkdir reference/
 ln -s /fs/project/PCON0009/LabData/Human/H9-hESC/Transcriptome/ONT/directRNA/20210108_1718_X5_FAO97046_21a85c27/fastq_pass fastq/H9-hESC
 ln -s /fs/project/PCON0009/LabData/Human/H9-hESC/Transcriptome/ONT/directRNA/20210108_1718_X5_FAO97046_21a85c27/fast5_pass fast5/H9-hESC
 ln -s /fs/project/PCON0009/LabData/Human/H9-hESC/Transcriptome/ONT/directRNA/20210108_1718_X5_FAO97046_21a85c27/sequencing_summary_FAO97046_264259c2.txt summary/H9-hESC_summary.txt
-ln -s /fs/project/PCON0009/Au-scratch2/haoran/reference/genecode/GRCh38.primary_assembly.genome.fa reference/genome.fa
 cd ../
 
 
-snakemake -c 9 -p outputs/H9-hESC.prediction.txt --cluster "sbatch -A PCON0009 -t {resources.runtime} -N 1 -c {threads}" --jobs 3 --set-scatter split=3
+snakemake -c 9 -p outputs/precomputed_visualization/H9-hESC --cluster "sbatch -A PCON0009 -t {resources.runtime} -N 1 -c {threads}" --jobs 3 --set-scatter split=3 --latency-wait 60

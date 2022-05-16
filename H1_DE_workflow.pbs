@@ -1,0 +1,27 @@
+#!/bin/bash
+#SBATCH --time=24:00:00
+#SBATCH --nodes=1 --ntasks-per-node=1
+#SBATCH --account=PCON0009
+module load python/3.6-conda5.2
+source activate AIediting
+cd /fs/project/PCON0009/Au-scratch2/haoran/_projects/AIediting_pipelines
+mkdir intermediates
+cd intermediates
+mkdir fastq/
+mkdir fast5/
+mkdir summary/
+mkdir reference/
+# link data
+ln -s /fs/project/PCON0009/LabData/Human/DE-H1/Transcriptome/ONT/directRNA/20210330_2124_X2_FAP47598_1c046625/fastq_pass fastq/H1-DE_FAP47598_1c046625
+ln -s /fs/project/PCON0009/LabData/Human/DE-H1/Transcriptome/ONT/directRNA/20210330_2124_X2_FAP47598_1c046625/fast5_pass fast5/H1-DE_FAP47598_1c046625
+ln -s /fs/project/PCON0009/LabData/Human/DE-H1/Transcriptome/ONT/directRNA/20210330_2124_X2_FAP47598_1c046625/sequencing_summary_FAP47598_07e34f33.txt summary/H1-DE_FAP47598_1c046625_summary.txt
+# link reference
+ln -s /fs/project/PCON0009/Au-scratch2/ying/StemCell/ref/genome.fa reference/genome.fa
+ln -s /fs/project/PCON0009/Au-scratch2/ying/StemCell/RNAdirect/reditools2/test/Hg38_Alu.merge.bed reference/Hg38_Alu.merge.bed
+ln -s /fs/project/PCON0009/Au-scratch2/ying/StemCell/RNAdirect/reditools2/test/hg38_snp151.bed reference/hg38_snp151.bed
+ln -s /fs/project/PCON0009/Au-scratch2/ying/StemCell/RNAdirect/reditools2/test/analysis_extract_m6A_motif.bed reference/analysis_extract_m6A_motif.bed
+ln -s /fs/project/PCON0009/Au-scratch2/ying/StemCell/RNAdirect/reditools2/test/REDIportal_hg38.txt reference/REDIportal_hg38.txt
+cd ../
+
+
+snakemake -c 336 -p outputs/precomputed_visualization/H1-DE_FAP47598_1c046625 --cluster "sbatch -A PCON0009 -t {resources.runtime} -N 1 -c {threads}" --jobs 12 --set-scatter split=12 --latency-wait 60 --rerun-incomplete
