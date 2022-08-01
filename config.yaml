@@ -1,0 +1,12 @@
+reference: 'genome' # genome or transcriptome
+center: 'A'
+nt: 4
+featurenum: 5
+buffersize: 1000
+labeltype: 'I'
+ref_dump_position: "memory"
+device: 'CPU'
+batch_size: 10000
+model: 'general'
+coverage_cutoff: 5
+ratio_cutoff: 0

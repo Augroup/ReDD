@@ -16,7 +16,10 @@ ln -s /fs/project/PCON0009/LabData/Human/DE-H1/Transcriptome/ONT/directRNA/20210
 ln -s /fs/project/PCON0009/LabData/Human/DE-H1/Transcriptome/ONT/directRNA/20210330_2124_X2_FAP47598_1c046625/fast5_pass fast5/H1-DE_FAP47598_1c046625
 ln -s /fs/project/PCON0009/LabData/Human/DE-H1/Transcriptome/ONT/directRNA/20210330_2124_X2_FAP47598_1c046625/sequencing_summary_FAP47598_07e34f33.txt summary/H1-DE_FAP47598_1c046625_summary.txt
 # link reference
+ln -s /fs/project/PCON0009/Au-scratch2/ying/StemCell/ref/gencode.v31.transcripts.id.fa reference/transcriptome.fa
 ln -s /fs/project/PCON0009/Au-scratch2/ying/StemCell/ref/genome.fa reference/genome.fa
+ln -s /fs/project/PCON0009/Au-scratch2/ying/StemCell/RNAdirect/reditools2/test/gencode.v31.annotation.cdna2genome.tab reference/gencode.v31.annotation.cdna2genome.tab
+ln -s /fs/project/PCON0009/Au-scratch2/ying/StemCell/RNAdirect/reditools2/test/gencode.v31.annotation.gpd reference/gencode.v31.annotation.gpd
 ln -s /fs/project/PCON0009/Au-scratch2/ying/StemCell/RNAdirect/reditools2/test/Hg38_Alu.merge.bed reference/Hg38_Alu.merge.bed
 ln -s /fs/project/PCON0009/Au-scratch2/ying/StemCell/RNAdirect/reditools2/test/hg38_snp151.bed reference/hg38_snp151.bed
 ln -s /fs/project/PCON0009/Au-scratch2/ying/StemCell/RNAdirect/reditools2/test/analysis_extract_m6A_motif.bed reference/analysis_extract_m6A_motif.bed
@@ -24,4 +27,4 @@ ln -s /fs/project/PCON0009/Au-scratch2/ying/StemCell/RNAdirect/reditools2/test/R
 cd ../
 
 snakemake --unlock
-snakemake -c 336 -p outputs/precomputed_visualization/H1-DE_FAP47598_1c046625 --cluster "sbatch -A PCON0009 -t {resources.runtime} -N 1 -c {threads}" --jobs 12 --set-scatter split=12 --latency-wait 60 --rerun-incomplete
+snakemake -c 336 -p outputs/precomputed_visualization/H1-DE_FAP47598_1c046625 --cluster "sbatch -A PCON0009 -t {resources.runtime} -N 1 -c {threads}" --jobs 12 --set-scatter split=12 --latency-wait 60 --rerun-incomplete --config reference='transcriptome' ref_dump_position='memory'

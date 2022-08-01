@@ -1,6 +1,9 @@
 scattergather:
     split=8
 num_split = workflow._scatter['split']
+configfile: "config.yaml"
+print('Current configuration:')
+print(config)
 # rule Unzip:
 #     input:
 #         "intermediates/fastq/{sample}.*.gz"
@@ -91,7 +94,8 @@ rule U2T:
         """awk '{{ if (NR%4 == 2) {{gsub(/U/,"T",$1); print $1}} else print }}' {input} > {output}"""
 rule minimap2:
     input:
-        ref = "intermediates/reference/genome.fa",
+        ref_genome = "intermediates/reference/genome.fa",
+        ref_transcriptome =  "intermediates/reference/transcriptome.fa",
         fastq = "intermediates/splitted/{sample}_{scatteritem}.U2T.fastq"
     output:
         "intermediates/mapped_reads/{sample}_{scatteritem}.raw.sam"
@@ -100,8 +104,12 @@ rule minimap2:
     group: 
         "simple_sam_operation"
     threads: 4
-    shell:
-        "minimap2 -G200k --secondary=no -ax splice -uf -k14 -t {threads} {input.ref} {input.fastq} > {output}"
+    run:
+        if config['reference'] == 'genome':
+            shell("minimap2 -G200k --secondary=no -ax splice -uf -k14 -t {threads} {input.ref_genome} {input.fastq} > {output}")
+        elif config['reference'] == 'transcriptome':
+            shell("minimap2 -G200k --secondary=no -ax map-ont -t {threads} {input.ref_transcriptome} {input.fastq} > {output}")
+
 rule filter_sam:
     input:
         "intermediates/mapped_reads/{sample}_{scatteritem}.raw.sam"
@@ -163,7 +171,7 @@ checkpoint nanopolish_eventalign:
         "intermediates/eventalign/{sample}_{scatteritem}_eventalign.txt"
     threads: 2
     resources:
-        # event_align will cost 150 core hourse per flowcell
+        # event_align will cost 150 core hours per flowcell
         runtime=  150 * 60 // num_split
     shell:
         "nanopolish eventalign --reads {input.fastq} --bam {input.bam} --genome {input.ref} --samples -t {threads} --print-read-names --signal-index --scale-events > {output}"
@@ -175,12 +183,12 @@ checkpoint extract_signals:
         event = "intermediates/eventalign/{sample}_{scatteritem}_eventalign.txt",
         # candidate=get_candidate_name
     params:
-        center="A",
-        nt=4,
-        featurenum=5,
-        buffersize=1000,
-        labeltype="I",
-        ref_dump_position = "disk"
+        center=config['center'],
+        nt=config['nt'],
+        featurenum=config['featurenum'],
+        buffersize=config['buffersize'],
+        labeltype=config['labeltype'],
+        ref_dump_position=config['ref_dump_position']
     output:
         "intermediates/cache/{sample}_{scatteritem}.hdf5",
     threads: 28
@@ -194,20 +202,33 @@ checkpoint predict:
     input:
          "intermediates/cache/{sample}_{scatteritem}.hdf5",
     output:
-         "intermediates/cache/{sample}_{scatteritem}.prediction.txt",
+         temp("intermediates/cache/{sample}_{scatteritem}.prediction.raw.txt"),
     params:
-        device='CPU',     #required, select from 'CPU' 'GPU'
-        batch_size=10000, #not required, but can be an optional param for user
-        model='general' #let the user select from 'general' 'HEK293T_specific' 'GM12878_specific' 'stemcell_specific'
+        device = config['device'],#required, select from 'CPU' 'GPU'   
+        batch_size=config['batch_size'], #not required, but can be an optional param for user
+        model=config['model'] #let the user select from 'general' 'HEK293T_specific' 'GM12878_specific' 'stemcell_specific'
     threads: 5
     resources:
         # extract_signal will cost 240 core hourse per flowcell
         runtime= 240 * 60 // num_split // 5
-    
-    shell:
+    run:
         """python scripts/predict.py --device {params.device} --threads {threads} --batch_size {params.batch_size} --weights_dir  scripts/models/{params.model}.ckpt --test_cachedata {input} --test_outputfile {output} """
-
-
+if config['reference'] == 'transcriptome':
+    rule cdna2genome:
+        input:
+            cdna_molecule_input="intermediates/cache/{sample}_{scatteritem}.prediction.raw.txt",
+            cdna2genome_tab="intermediates/reference/gencode.v31.annotation.cdna2genome.tab",
+            REDI_txt="intermediates/reference/REDIportal_hg38.txt",
+            annotation_gpd="intermediates/reference/gencode.v31.annotation.gpd"
+        output:
+            "intermediates/cache/{sample}_{scatteritem}.prediction.txt",
+        shell:
+            "sh scripts/cdna2genome.sh {input.cdna_molecule_input} {output} {input.cdna2genome_tab} {input.REDI_txt} {input.annotation_gpd}"
+elif config['reference'] == 'genome':
+    rule genome2genome:
+        input:"intermediates/cache/{sample}_{scatteritem}.prediction.raw.txt",
+        output:"intermediates/cache/{sample}_{scatteritem}.prediction.txt",
+        shell:"mv {input} {output}"
 rule merge_predicts:
     input:
         gather.split("intermediates/cache/{{sample}}_{scatteritem}.prediction.txt")
@@ -239,8 +260,8 @@ rule generate_site_level_results:
     group: 
         "prediction_aggregation"
     params:
-        coverage_cutoff=5, #not required, defualt is 5, can be choosed by user.
-        ratio_cutoff=0 #not required,defualt is 0, can be choosed by user.
+        coverage_cutoff = config['coverage_cutoff'], #not required, defualt is 5, can be choosed by user.
+        ratio_cutoff=config['ratio_cutoff'] #not required,defualt is 0, can be choosed by user.
     threads: 6
     resources:
         runtime= 3 * 60 // 6
@@ -255,7 +276,7 @@ checkpoint genome_site_filtering: #we need parameters to select from genome and 
         alu_bed="intermediates/reference/Hg38_Alu.merge.bed",
         snp_bed="intermediates/reference/hg38_snp151.bed",
         m6A_motif_bed="intermediates/reference/analysis_extract_m6A_motif.bed",
-        BEDI_txt="intermediates/reference/REDIportal_hg38.txt"
+        REDI_txt="intermediates/reference/REDIportal_hg38.txt"
     output:
         temp_bed_1="outputs/{sample}-1.bed",
         temp_bed_2="outputs/{sample}-2.bed",
@@ -266,7 +287,7 @@ checkpoint genome_site_filtering: #we need parameters to select from genome and 
     resources:
         runtime=30
     shell:
-        """sh scripts/genome_site_filtering.sh {input.site_bed} {input.alu_bed} {input.snp_bed} {input.m6A_motif_bed} {input.BEDI_txt} {output.temp_bed_1} {output.temp_bed_2} {output.site_tab}"""
+        """sh scripts/genome_site_filtering.sh {input.site_bed} {input.alu_bed} {input.snp_bed} {input.m6A_motif_bed} {input.REDI_txt} {output.temp_bed_1} {output.temp_bed_2} {output.site_tab}"""
 rule pre_compute_visualization:
     input:
         site_tab="outputs/{sample}.flt.tab",
