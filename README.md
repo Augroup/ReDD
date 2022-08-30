@@ -46,23 +46,28 @@ Named arguments about inputs:
 
 Named arguments about other pipeline settings:
   --overall_time OVERALL_TIME
-                        The estimated overall running time
+                        The estimated overall running time.[default:24]
   --pipeline_mode PIPELINE_MODE
-                        Which mode to use to run the pipeline.[cluster,bash]
+                        Which mode to use to run the
+                        pipeline.[cluster,bash][default:cluster]
   --account ACCOUNT     Which account uses for running in cluster. Required if
                         --pipeline_mode set to cluster
   --max_cores_resources MAX_CORES_RESOURCES
-                        Max number of cores uses in the same time.
+                        Max number of cores uses in the same
+                        time.[default:112]
   --num_split NUM_SPLIT
-                        Number of file split to enable parallel computing
-  --model MODEL         Which model will be used [general]
+                        Number of file split to enable parallel
+                        computing.[default:4]
+  --model MODEL         Which model will be used [general][default:general]
   --filter_snp FILTER_SNP
-                        Whether filer out snp
+                        Whether filer out snp[default:True]
   --filter_m6A FILTER_M6A
-                        Whether filer out m6A
-  --device DEVICE       Use GPU or CPU to speed up prediction [CPU,GPU]
+                        Whether filer out m6A[default:True]
+  --device DEVICE       Use GPU or CPU to speed up prediction
+                        [CPU,GPU].[default:CPU]
   --snakefile_path SNAKEFILE_PATH
-                        The path of directory containing snakefile
+                        The path of directory containing
+                        snakefile.[default:./]
 
 Named arguments about reference files:
   --ref_genome REF_GENOME
@@ -122,23 +127,28 @@ Named arguments about inputs:
 
 Named arguments about other pipeline settings:
   --overall_time OVERALL_TIME
-                        The estimated overall running time
+                        The estimated overall running time.[default:24]
   --pipeline_mode PIPELINE_MODE
-                        Which mode to use to run the pipeline.[cluster,bash]
+                        Which mode to use to run the
+                        pipeline.[cluster,bash][default:cluster]
   --account ACCOUNT     Which account uses for running in cluster. Required if
                         --pipeline_mode set to cluster
   --max_cores_resources MAX_CORES_RESOURCES
-                        Max number of cores uses in the same time.
+                        Max number of cores uses in the same
+                        time.[default:112]
   --num_split NUM_SPLIT
-                        Number of file split to enable parallel computing
-  --model MODEL         Which model will be used [general]
+                        Number of file split to enable parallel
+                        computing.[default:4]
+  --model MODEL         Which model will be used [general][default:general]
   --filter_snp FILTER_SNP
-                        Whether filer out snp
+                        Whether filer out snp[default:True]
   --filter_m6A FILTER_M6A
-                        Whether filer out m6A
-  --device DEVICE       Use GPU or CPU to speed up prediction [CPU,GPU]
+                        Whether filer out m6A[default:True]
+  --device DEVICE       Use GPU or CPU to speed up prediction
+                        [CPU,GPU].[default:CPU]
   --snakefile_path SNAKEFILE_PATH
-                        The path of directory containing snakefile
+                        The path of directory containing
+                        snakefile.[default:./]
 
 Named arguments about reference files:
   --ref_genome REF_GENOME
