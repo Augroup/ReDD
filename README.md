@@ -60,9 +60,9 @@ Named arguments about other pipeline settings:
                         computing.[default:4]
   --model MODEL         Which model will be used [general][default:general]
   --filter_snp FILTER_SNP
-                        Whether filer out snp[default:True]
+                        Whether filer out snp[default:False]
   --filter_m6A FILTER_M6A
-                        Whether filer out m6A[default:True]
+                        Whether filer out m6A[default:False]
   --device DEVICE       Use GPU or CPU to speed up prediction
                         [CPU,GPU].[default:CPU]
   --snakefile_path SNAKEFILE_PATH
@@ -141,9 +141,9 @@ Named arguments about other pipeline settings:
                         computing.[default:4]
   --model MODEL         Which model will be used [general][default:general]
   --filter_snp FILTER_SNP
-                        Whether filer out snp[default:True]
+                        Whether filer out snp[default:False]
   --filter_m6A FILTER_M6A
-                        Whether filer out m6A[default:True]
+                        Whether filer out m6A[default:False]
   --device DEVICE       Use GPU or CPU to speed up prediction
                         [CPU,GPU].[default:CPU]
   --snakefile_path SNAKEFILE_PATH
