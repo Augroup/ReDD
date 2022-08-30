@@ -10,3 +10,5 @@ batch_size: 10000
 model: 'general'
 coverage_cutoff: 5
 ratio_cutoff: 0
+filter_snp: 'False'
+filter_m6A: 'False'

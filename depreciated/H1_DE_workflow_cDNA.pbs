@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --time=24:00:00
 #SBATCH --nodes=1 --ntasks-per-node=1
-#SBATCH --account=PCON0009
+#SBATCH --account=PAS1669
 module load python/3.6-conda5.2
 source activate AIediting
 cd /fs/project/PCON0009/Au-scratch2/haoran/_projects/AIediting_pipelines
@@ -16,7 +16,7 @@ ln -s /fs/project/PCON0009/LabData/Human/DE-H1/Transcriptome/ONT/directRNA/20210
 ln -s /fs/project/PCON0009/LabData/Human/DE-H1/Transcriptome/ONT/directRNA/20210330_2124_X2_FAP47598_1c046625/fast5_pass fast5/H1-DE_FAP47598_1c046625
 ln -s /fs/project/PCON0009/LabData/Human/DE-H1/Transcriptome/ONT/directRNA/20210330_2124_X2_FAP47598_1c046625/sequencing_summary_FAP47598_07e34f33.txt summary/H1-DE_FAP47598_1c046625_summary.txt
 # link reference
-ln -s /fs/project/PCON0009/Au-scratch2/ying/StemCell/ref/gencode.v31.transcripts.id.fa reference/transcriptome.fa
+ln -s /fs/project/PCON0009/Au-scratch2/ying/StemCell/RNAdirect/reditools2/2-curate_gtf/Stem_cell_talon.flt.bam_flt.gtf.fa reference/transcriptome.fa
 ln -s /fs/project/PCON0009/Au-scratch2/ying/StemCell/ref/genome.fa reference/genome.fa
 ln -s /fs/project/PCON0009/Au-scratch2/ying/StemCell/RNAdirect/reditools2/test/gencode.v31.annotation.cdna2genome.tab reference/gencode.v31.annotation.cdna2genome.tab
 ln -s /fs/project/PCON0009/Au-scratch2/ying/StemCell/RNAdirect/reditools2/test/gencode.v31.annotation.gpd reference/gencode.v31.annotation.gpd
@@ -27,4 +27,4 @@ ln -s /fs/project/PCON0009/Au-scratch2/ying/StemCell/RNAdirect/reditools2/test/R
 cd ../
 
 snakemake --unlock
-snakemake -c 336 -p outputs/precomputed_visualization/H1-DE_FAP47598_1c046625 --cluster "sbatch -A PCON0009 -t {resources.runtime} -N 1 -c {threads}" --jobs 12 --set-scatter split=12 --latency-wait 60 --rerun-incomplete --config reference='transcriptome' ref_dump_position='memory'
+snakemake -c 112 -p outputs/precomputed_visualization/H1-DE_FAP47598_1c046625 --cluster "sbatch -A PAS1669 -t {resources.runtime} -N 1 -c {threads}" --jobs 8 --set-scatter split=8 --latency-wait 60 --rerun-incomplete --config reference='transcriptome' ref_dump_position='memory'

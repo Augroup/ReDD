@@ -1,0 +1,2 @@
+
+sh scripts/transcriptome_site_filtering.sh outputs/H1-DE_FAP47598_1c046625.site.bed intermediates/reference/Hg38_Alu.merge.bed intermediates/reference/hg38_snp151.bed intermediates/reference/analysis_extract_m6A_motif.bed intermediates/reference/REDIportal_hg38.txt outputs/H1-DE_FAP47598_1c046625-1.bed outputs/H1-DE_FAP47598_1c046625-2.bed outputs/H1-DE_FAP47598_1c046625.flt.tab intermediates/reference/gencode.v31.annotation.cdna2genome.tab intermediates/reference/gencode.v31.annotation.gpd False False
