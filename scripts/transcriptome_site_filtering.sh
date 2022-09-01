@@ -16,16 +16,14 @@ awk -F '\t' -v OFS="\t" '{if ($8) print $7,$8,$8+1}' $site_tab.temp | sort -k1,1
 bedtools intersect -a $temp_bed_1 -b $alu_bed -wo > $temp_bed_2
 awk -F '\t' -v OFS="\t" 'ARGIND==1{hash_alu[$1"\t"$2]++}ARGIND==2{site=$7"\t"$8; label="non_Alu"; gene=$9; if(site in hash_alu) label="Alu"; if($4>=5) print $0,label; }' $temp_bed_2 $site_tab.temp > $site_tab
 
-if $filter_snp=="True" 
+if [ $filter_snp = True ];
 then
-    echo $filter_snp
     mv $site_tab $site_tab.temp
     awk -F '\t' -v OFS="\t" 'ARGIND==1{ if($8=="non_snp") print $0 }' $site_tab.temp > $site_tab
     rm $site_tab.temp
 fi
-if $filter_m6A=="True" 
+if [ $filter_m6A = True ];
 then
-    echo $filter_m6A
     mv $site_tab $site_tab.temp
     awk -F '\t' -v OFS="\t" 'ARGIND==1{ if($9=="non_m6A_motif") print $0 }' $site_tab.temp > $site_tab
     rm $site_tab.temp
