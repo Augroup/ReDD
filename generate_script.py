@@ -151,6 +151,7 @@ filter_m6A: '{filter_m6A}'
 
 source activate AIediting
 
+rm -r {output_folder}/intermediates/reference/
 mkdir {output_folder}/intermediates
 mkdir {output_folder}/intermediates/fastq/
 mkdir {output_folder}/intermediates/fast5/
