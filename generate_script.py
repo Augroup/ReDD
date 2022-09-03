@@ -107,9 +107,9 @@ def main():
     
     if pipeline_mode == 'cluster' and account is None:
         prompt_error('No account(--account) is given but you have set --pipeline_mode to cluster')
+    with open(f'{output_folder}/empty', 'w') as fp:
+        pass
     if reference_choice == 'genome':
-        with open(f'{output_folder}/empty', 'w') as fp:
-            pass
         os.system(f"attrib +h {output_folder}/empty")
         ref_transcriptome_file = f'{output_folder}/empty'
         # ref_cdna_to_genome_file = f'{output_folder}/empty'
