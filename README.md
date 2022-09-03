@@ -196,6 +196,7 @@ python ~/_projects/AIediting_pipelines/generate_script.py transcriptome \
 --ref_alu /fs/project/PCON0009/Au-scratch2/ying/StemCell/RNAdirect/reditools2/test/Hg38_Alu.merge.bed \
 --ref_snp /fs/project/PCON0009/Au-scratch2/ying/StemCell/RNAdirect/reditools2/test/hg38_snp151.bed \
 --ref_REDIportal /fs/project/PCON0009/Au-scratch2/ying/StemCell/RNAdirect/reditools2/test/REDIportal_hg38.txt \
+--ref_candidate_sites /fs/project/PCON0009/Au-scratch2/ying/StemCell/RNAdirect/reditools2/7-reditools2_final/DE-H1_directRNA.candidate_sites.tab
 --snakefile_path /users/PCON0009/haoranli/_projects/AIediting_pipelines/
 
 python ~/_projects/AIediting_pipelines/generate_script.py genome \
@@ -215,5 +216,6 @@ python ~/_projects/AIediting_pipelines/generate_script.py genome \
 --ref_snp /fs/project/PCON0009/Au-scratch2/ying/StemCell/RNAdirect/reditools2/test/hg38_snp151.bed \
 --ref_m6A_motif /fs/project/PCON0009/Au-scratch2/ying/StemCell/RNAdirect/reditools2/test/analysis_extract_m6A_motif.bed \
 --ref_REDIportal /fs/project/PCON0009/Au-scratch2/ying/StemCell/RNAdirect/reditools2/test/REDIportal_hg38.txt \
+--ref_candidate_sites /fs/project/PCON0009/Au-scratch2/ying/StemCell/RNAdirect/reditools2/7-reditools2_final/DE-H1_directRNA.candidate_sites.tab
 --snakefile_path /users/PCON0009/haoranli/_projects/AIediting_pipelines/
 ```
