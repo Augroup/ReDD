@@ -27,7 +27,7 @@ rule merge_fastq:
     resources:
         runtime= 5
     shell:
-        "cat {input}/* > {output}"
+        "cat {input}/*.fastq > {output}"
 # rule fq2fastq:
 #     input:
 #         "intermediates/fastq/{sample}.fq"
