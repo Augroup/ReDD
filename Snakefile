@@ -1,45 +1,23 @@
 scattergather:
     split=8
+
 num_split = workflow._scatter['split']
 configfile: "config.yaml"
-print('Current configuration:')
-print(config)
-# rule Unzip:
-#     input:
-#         "intermediates/fastq/{sample}.*.gz"
-#     output:
-#         temp("intermediates/fastq/{sample}.fastq")
-#     group: 
-#         "simple_fastq_operation"
-#     resources:
-#         runtime = 5
-#     threads: 1
-#     shell:
-#         "zcat {input} > {output}"
+
 rule merge_fastq:
     input:
-        "intermediates/fastq/{sample}/"
+        #"intermediates/fastq/{sample}/"
+        config['input_fastq_folder']
     output:
-        "intermediates/fastq/{sample}.fastq"
+        "intermediates/fastq/"+config['sample']+".fastq"
     group: 
         "simple_fastq_operation"
     threads: 1
     resources:
         runtime= 5
     shell:
-        "cat {input}/*.fastq > {output}"
-# rule fq2fastq:
-#     input:
-#         "intermediates/fastq/{sample}.fq"
-#     output:
-#         temp("intermediates/fastq/{sample}.fastq")
-#     group: 
-#         "simple_fastq_operation"
-#     threads: 1
-#     resources:
-#         runtime= 5
-#     shell:
-#         "cp {input} {output}"
+        "cat {input}/* > {output}"
+
 rule multiline_fastq_to_four_lines:
     input:
         "intermediates/fastq/{sample}.fastq"
@@ -95,26 +73,26 @@ rule U2T:
 if config['reference'] == 'genome':
     rule reference_index:
         input:
-            ref_genome = "intermediates/reference/genome.fa",
-            ref_transcriptome =  "intermediates/reference/transcriptome.fa",
+            ref_genome = "intermediates/reference/{sample}.genome.fa",
         output:
-            ref_genome_index = "intermediates/reference/genome.fa.fai",
-            ref_transcriptome_index = "intermediates/reference/transcriptome.fa.fai"
+            ref_genome_index = "intermediates/reference/{sample}.genome.fa.fai",
+            ref_transcriptome_index = "intermediates/reference/{sample}.transcriptome.fa.fai",
+            ref_transcriptome =  "intermediates/reference/{sample}.transcriptome.fa",
         resources:
             runtime=30
         group: 
             "simple_fastq_operation"
         threads: 1
         run:
-            shell("""samtools faidx {input.ref_genome}""")
+            shell("""samtools faidx {input.ref_genome}; touch {output.ref_transcriptome_index}; touch {output.ref_transcriptome}""")
 elif config['reference'] == 'transcriptome':
     rule reference_index:
         input:
-            ref_genome = "intermediates/reference/genome.fa",
-            ref_transcriptome =  "intermediates/reference/transcriptome.fa",
+            ref_genome = "intermediates/reference/{sample}.genome.fa",
+            ref_transcriptome =  "intermediates/reference/{sample}.transcriptome.fa",
         output:
-            ref_genome_index = "intermediates/reference/genome.fa.fai",
-            ref_transcriptome_index = "intermediates/reference/transcriptome.fa.fai"
+            ref_genome_index = "intermediates/reference/{sample}.genome.fa.fai",
+            ref_transcriptome_index = "intermediates/reference/{sample}.transcriptome.fa.fai"
         resources:
             runtime=30
         group: 
@@ -123,11 +101,12 @@ elif config['reference'] == 'transcriptome':
         run:
             shell("""samtools faidx {input.ref_genome}""")
             shell("""samtools faidx {input.ref_transcriptome}""")
-checkpoint minimap2:
+rule minimap2:
     input:
-        ref_genome = "intermediates/reference/genome.fa",
-        ref_transcriptome =  "intermediates/reference/transcriptome.fa",
+        ref_genome = "intermediates/reference/{sample}.genome.fa",
+        ref_transcriptome =  "intermediates/reference/{sample}.transcriptome.fa",
         fastq = "intermediates/splitted/{sample}_{scatteritem}.U2T.fastq",
+        ref_genome_index = "intermediates/reference/{sample}.genome.fa.fai"
     output:
         "intermediates/mapped_reads/{sample}_{scatteritem}.raw.sam"
     resources:
@@ -180,14 +159,18 @@ rule samtools_index:
         "samtools index -@ {threads} {input}"
 rule nanopolish_index:
     input:
-        fast5_dir = "intermediates/fast5/{sample}/",
+        #fast5_dir = "intermediates/fast5/{sample}/",
+        fast5_dir = config['input_fast5_folder'],
         fastq = "intermediates/splitted/{sample}_{scatteritem}.U2T.fastq"
     output:
        "intermediates/splitted/{sample}_{scatteritem}.U2T.fastq.index"
     threads: 1
     resources:
         # nanopolish_index will cost 24 core hourse per flowcell
-        runtime= 24 * 60 // num_split // 1
+        runtime= 24 * 60 // 3 // 1
+    benchmark: 
+        "intermediates/splitted/{sample}_{scatteritem}.U2T.fastq.index.benchmark.tsv"
+    
     shell:
         "nanopolish index -d {input.fast5_dir} {input.fastq}"
 checkpoint nanopolish_eventalign:
@@ -196,14 +179,17 @@ checkpoint nanopolish_eventalign:
         rules.samtools_index.output,
         fastq = "intermediates/splitted/{sample}_{scatteritem}.U2T.fastq",
         bam = "intermediates/mapped_reads/{sample}_{scatteritem}.sorted.bam",
-        ref_genome = "intermediates/reference/genome.fa",
-        ref_transcriptome =  "intermediates/reference/transcriptome.fa",
+        ref_genome = "intermediates/reference/{sample}.genome.fa",
+        ref_transcriptome =  "intermediates/reference/{sample}.transcriptome.fa",
     output:
         "intermediates/eventalign/{sample}_{scatteritem}_eventalign.txt"
     threads: 2
     resources:
         # event_align will cost 150 core hours per flowcell
-        runtime=  600 * 60 // num_split
+        #runtime=  300 * 60 // 3
+        runtime= 24 * 60
+    benchmark: 
+        "intermediates/eventalign/{sample}_{scatteritem}_eventalign.benchmark.tsv"
     run:
         if config['reference'] == 'genome':
             shell("nanopolish eventalign --reads {input.fastq} --bam {input.bam} --genome {input.ref_genome} --samples -t {threads} --print-read-names --signal-index --scale-events > {output}")
@@ -211,9 +197,10 @@ checkpoint nanopolish_eventalign:
             shell("nanopolish eventalign --reads {input.fastq} --bam {input.bam} --genome {input.ref_transcriptome} --samples -t {threads} --print-read-names --signal-index --scale-events > {output}")
 checkpoint extract_signals:
     input:
-        ref_genome = "intermediates/reference/genome.fa",
-        ref_transcriptome =  "intermediates/reference/transcriptome.fa",
-        summary = "intermediates/summary/{sample}_summary.txt",
+        ref_genome = "intermediates/reference/{sample}.genome.fa",
+        ref_transcriptome =  "intermediates/reference/{sample}.transcriptome.fa",
+        #summary = "intermediates/summary/{sample}_summary.txt",
+        summary = config['input_summary_file'],
         bam = "intermediates/mapped_reads/{sample}_{scatteritem}.sorted.bam",
         event = "intermediates/eventalign/{sample}_{scatteritem}_eventalign.txt",
         # candidate=get_candidate_name
@@ -226,11 +213,16 @@ checkpoint extract_signals:
         ref_dump_position=config['ref_dump_position']
     output:
         "intermediates/cache/{sample}_{scatteritem}.hdf5",
-    threads: 28
+    #threads: 28
+    threads: 6
     resources:
         # extract_signal will cost 672 core hourse per flowcell
-        runtime= 2000 * 60 // num_split // 28
+        runtime= 2000 * 60 // 3 // 28
         # runtime= 60
+    
+    benchmark: 
+        "intermediates/cache/{sample}_{scatteritem}.hdf5.benchmark.tsv"
+    
     run:
         if config['reference'] == 'genome':
             shell("""python scripts/extract_bin_data.py --center {params.center} --nt {params.nt} --labeltype {params.labeltype} --maxbuffer_size {params.buffersize} --featurenum {params.featurenum} \
@@ -250,14 +242,25 @@ checkpoint predict:
     threads: 5
     resources:
         # extract_signal will cost 240 core hourse per flowcell
-        runtime= 480 * 60 // num_split // 5
+        runtime= 480 * 60 // 3 // 5
+    
+    benchmark: 
+        "intermediates/cache/{sample}_{scatteritem}.prediction.raw.benchmark.tsv"
+    
     shell:
         """python scripts/predict.py --device {params.device} --threads {threads} --batch_size {params.batch_size} --weights_dir  scripts/models/{params.model}.ckpt --test_cachedata {input} --test_outputfile {output} """
-rule merge_predicts:
+
+#moleoutput = list()
+if config['reference'] == 'genome':
+    moleoutput="outputs/"+config['sample']+".prediction.genome.txt"
+elif config['reference'] == 'transcriptome':
+    moleoutput="outputs/"+config['sample']+".prediction.txt"
+
+checkpoint merge_predicts:
     input:
-        gather.split("intermediates/cache/{{sample}}_{scatteritem}.prediction.raw.txt")
+        gather.split("intermediates/cache/"+config['sample']+"_{scatteritem}.prediction.raw.txt")
     output:
-        "outputs/{sample}.prediction.txt"
+        moleoutput
     threads: 1
     # group: 
     #     "prediction_aggregation"
@@ -265,30 +268,27 @@ rule merge_predicts:
         runtime= 5
     shell:
         "cat {input} > {output}"
-# rule merge_fast5:
-#     input:
-#         gather.split("intermediates/cache/{{sample}}_{scatteritem}.hdf5")
-#     output:
-#         "outputs/{sample}_fast5_list.txt"
-#     threads: 1
-#     resources:
-#         runtime=5
-        
-#     shell:
-#         "ls {input} > {output}"
-rule generate_site_level_results:
+
+
+mole_input=[]
+if config['reference'] == 'genome':
+    mole_input.append("outputs/"+config['sample']+".prediction.genome.txt")
+elif config['reference'] == 'transcriptome':
+    mole_input.append("outputs/"+config['sample']+".prediction.txt")
+
+checkpoint generate_site_level_results:
     input: 
-        "outputs/{sample}.prediction.txt"
+        mole_input
     output: 
         "outputs/{sample}.site.bed"
     # group: 
     #     "prediction_aggregation"
     params:
         coverage_cutoff = config['coverage_cutoff'], #not required, defualt is 5, can be choosed by user.
-        ratio_cutoff=config['ratio_cutoff'] #not required,defualt is 0, can be choosed by user.
+        ratio_cutoff=0 #config['ratio_cutoff'] #not required,defualt is 0.1, can be choosed by user.
     threads: 12
     resources:
-        runtime= 3 * 60 // 12
+        runtime= 12 * 60
     shell:
         # """sh scripts/generate_sitelev_info.sh {input} {output}"""
         """python scripts/generate_sitelev_info.py --input {input} --output {output} --threads {threads} --cov_cutoff {params.coverage_cutoff} --ratio_cutoff {params.ratio_cutoff} --mod_cov_cutoff 0 """
@@ -296,9 +296,10 @@ rule generate_site_level_results:
 if config['reference'] == 'transcriptome':
     rule create_cdna2genome_bed:
         input:
-            annotation_gpd="intermediates/reference/gencode.v31.annotation.gpd",
+            #annotation_gpd="intermediates/reference/{sample}.gencode.v31.annotation.gpd",
+            annotation_gpd=config['ref_annotation_file']
         output:
-            cdna2genome_tab="intermediates/reference/gencode.v31.annotation.cdna2genome.tab",
+            cdna2genome_tab="intermediates/reference/"+config['sample']+".gencode.v31.annotation.cdna2genome.tab",
         resources:
             runtime= 60
         threads: 1
@@ -307,18 +308,18 @@ if config['reference'] == 'transcriptome':
 else:
     rule create_cdna2genome_bed:
         output:
-            cdna2genome_tab="intermediates/reference/gencode.v31.annotation.cdna2genome.tab",
+            cdna2genome_tab="intermediates/reference/"+config['sample']+".gencode.v31.annotation.cdna2genome.tab",
         resources:
             runtime= 1
         threads: 1
         shell:
             "touch {output.cdna2genome_tab}"
-if config['filter_m6A'] == 'True':
+if config['filter_m6A']=='True' or config['add_m6A_reference']=='True':
     rule create_m6A_motif:
         input:
-            ref_genome = "intermediates/reference/genome.fa"
+            ref_genome = "intermediates/reference/{sample}.genome.fa"
         output:
-            m6A_motif_bed="intermediates/reference/analysis_extract_m6A_motif.bed"
+            m6A_motif_bed="intermediates/reference/{sample}.analysis_extract_m6A_motif.bed"
         threads: 1
         # group: 
         #     "prediction_aggregation"
@@ -329,9 +330,9 @@ if config['filter_m6A'] == 'True':
 else:
     rule create_m6A_motif:
         input:
-            ref_genome = "intermediates/reference/genome.fa"
+            ref_genome = "intermediates/reference/{sample}.genome.fa"
         output:
-            m6A_motif_bed="intermediates/reference/analysis_extract_m6A_motif.bed"
+            m6A_motif_bed="intermediates/reference/{sample}.analysis_extract_m6A_motif.bed"
         threads: 1
         # group: 
         #     "prediction_aggregation"
@@ -339,22 +340,40 @@ else:
             runtime=1
         shell:
             """touch {output.m6A_motif_bed}"""
-checkpoint site_filtering: #we need parameters to select from genome and cdna
+
+if config['reference'] == 'genome':
+    site_tab="outputs/"+config['sample']+".flt.genome.tab",
+elif config['reference'] == 'transcriptome':
+    site_tab="outputs/"+config['sample']+".flt.transcriptome.tab"
+
+rule site_filtering: #we need parameters to select from genome and cdna
     input:
-        site_bed="outputs/{sample}.site.bed",
-        alu_bed="intermediates/reference/Hg38_Alu.merge.bed",
-        snp_bed="intermediates/reference/hg38_snp151.bed",
-        m6A_motif_bed="intermediates/reference/analysis_extract_m6A_motif.bed",
-        REDI_txt="intermediates/reference/REDIportal_hg38.txt",
-        cdna2genome_tab="intermediates/reference/gencode.v31.annotation.cdna2genome.tab",
-        annotation_gpd="intermediates/reference/gencode.v31.annotation.gpd"
+        site_bed="outputs/"+config['sample']+".site.bed",
+        #alu_bed="intermediates/reference/"+config['sample']+".Hg38_Alu.merge.bed",
+        alu_bed=config['ref_alu_file'],
+        #snp_bed="intermediates/reference/"+config['sample']+".hg38_snp151.bed",
+        snp_bed=config['ref_snp_file'],
+        m6A_motif_bed="intermediates/reference/"+config['sample']+".analysis_extract_m6A_motif.bed",
+        #REDI_txt="intermediates/reference/"+config['sample']+".REDIportal_hg38.txt",
+        REDI_txt=config['ref_REDIportal_file'],
+        cdna2genome_tab="intermediates/reference/"+config['sample']+".gencode.v31.annotation.cdna2genome.tab",
+        #annotation_gpd="intermediates/reference/{sample}.gencode.v31.annotation.gpd"
+        annotation_gpd=config['ref_annotation_file']
     output:
-        temp_bed_1="outputs/{sample}-1.bed",
-        temp_bed_2="outputs/{sample}-2.bed",
-        site_tab="outputs/{sample}.flt.tab"
+        temp_bed_1="outputs/"+config['sample']+"-1.bed",
+        temp_bed_2="outputs/"+config['sample']+"-2.bed",
+        site_tab=site_tab
+
     params:
         filter_snp=config['filter_snp'],
-        filter_m6A=config['filter_m6A']
+        filter_m6A=config['filter_m6A'],
+        in_alu_coverage=config['in_alu_coverage'],
+        out_alu_coverage=config['out_alu_coverage'],
+        in_alu_ratio=config['in_alu_ratio'],
+        out_alu_ratio=config['out_alu_ratio'],
+        coverage_cutoff=config['coverage_cutoff'],
+        ratio_cutoff=config['ratio_cutoff']
+        
     threads: 6
     # group: 
     #     "prediction_aggregation"
@@ -362,68 +381,66 @@ checkpoint site_filtering: #we need parameters to select from genome and cdna
         runtime=30
     run:
         if config['reference'] == 'genome':
-            shell("""sh scripts/genome_site_filtering.sh {input.site_bed} {input.alu_bed} {input.snp_bed} {input.m6A_motif_bed} {input.REDI_txt} {output.temp_bed_1} {output.temp_bed_2} {output.site_tab} {params.filter_snp} {params.filter_m6A}""")
+            shell("""sh scripts/genome_site_filtering.sh {input.site_bed} {input.alu_bed} {input.snp_bed} {input.m6A_motif_bed} {input.REDI_txt} {output.temp_bed_1} {output.temp_bed_2} {output.site_tab} {params.filter_snp} {params.filter_m6A} {params.in_alu_coverage} {params.out_alu_coverage} {params.in_alu_ratio} {params.out_alu_ratio} {params.coverage_cutoff} {params.ratio_cutoff}""")
         elif config['reference'] == 'transcriptome':
             shell("""sh scripts/transcriptome_site_filtering.sh {input.site_bed} {input.alu_bed} {input.snp_bed} {input.m6A_motif_bed} {input.REDI_txt} {output.temp_bed_1} {output.temp_bed_2} {output.site_tab} {input.cdna2genome_tab} {input.annotation_gpd} {params.filter_snp} {params.filter_m6A}""")
+
 if config['reference'] == 'transcriptome':
     rule cdna2genome:
         input:
-            cdna_molecule_input="outputs/{sample}.prediction.txt",
-            cdna2genome_tab="intermediates/reference/gencode.v31.annotation.cdna2genome.tab",
-            REDI_txt="intermediates/reference/REDIportal_hg38.txt",
-            annotation_gpd="intermediates/reference/gencode.v31.annotation.gpd",
-            snp_bed="intermediates/reference/hg38_snp151.bed",
-            m6A_motif_bed="intermediates/reference/analysis_extract_m6A_motif.bed",
-            cdna_site_tab="outputs/{sample}.flt.tab"
+            cdna_molecule_input="outputs/"+config['sample']+".prediction.txt",
+            cdna2genome_tab="intermediates/reference/"+config['sample']+".gencode.v31.annotation.cdna2genome.tab",
+            cdna_site_tab="outputs/"+config['sample']+".flt.transcriptome.tab",
         output:
-            mole="outputs/{sample}.prediction.genome.txt",
-            site_tab="outputs/{sample}.flt.genome.tab",
-        params:
-            filter_snp=config['filter_snp'],
-            filter_m6A=config['filter_m6A']
+            mole="outputs/"+config['sample']+".prediction.transcriptome.txt",
+            site_tab="outputs/"+config['sample']+".flt.genome.tab",
         resources:
-            runtime= 20
+            runtime= 12 * 60
         threads: 6
         shell:
-            """sh scripts/cdna2genome.sh {input.cdna_molecule_input} {output.mole} {output.site_tab} {input.cdna2genome_tab} {input.REDI_txt} {input.annotation_gpd} {input.cdna_site_tab} {params.filter_snp} {params.filter_m6A}"""
-elif config['reference'] == 'genome':
-    rule genome2genome:
-        input:
-            mole="outputs/{sample}.prediction.txt",
-            site_tab="outputs/{sample}.flt.tab",
-        output:
-            mole="outputs/{sample}.prediction.genome.txt",
-            site_tab="outputs/{sample}.flt.genome.tab",
-        resources:
-            runtime= 20
-        threads: 6
-        shell:"ln -s {input.mole} {output.mole} & ln -s {input.site_tab} {output.site_tab}"
+            """sh scripts/cdna2genome.sh {input.cdna_molecule_input} {output.mole} {output.site_tab} {input.cdna2genome_tab} {input.cdna_site_tab}"""
+
 if config['reference'] == 'genome':
     rule pre_compute_visualization:
         input:
-            site_tab="outputs/{sample}.flt.genome.tab",
-            mole_level_bed="outputs/{sample}.prediction.genome.txt",
-            ref = "intermediates/reference/genome.fa",
-            candidate_sites = "intermediates/reference/{sample}.candidate_sites.tab",
+            site_tab="outputs/"+config['sample']+".flt.genome.tab",
+            mole_level_bed="outputs/"+config['sample']+".prediction.genome.txt",
+            ref = "intermediates/reference/"+config['sample']+".genome.fa",
+            candidate_sites = config['ref_candidate_sites_file']
+        params:
+            reference_type = "genome"
         output:
-            directory("outputs/precomputed_visualization/{sample}/")
+            directory("outputs/precomputed_visualization/"+config['sample']+"/")
         threads: 12
         resources:
-            runtime= 120
+            runtime= 12 * 60
         shell:
-            """python scripts/prep_visualization.py --candidate_sites {input.candidate_sites} --site_level_bed {input.site_tab} --mole_level_bed {input.mole_level_bed} -ref {input.ref} -o {output} -t {threads}"""
+            """python scripts/prep_visualization.py --candidate_sites {input.candidate_sites} --site_level_bed {input.site_tab} --mole_level_bed {input.mole_level_bed} --reference_type {params.reference_type} -ref {input.ref} -o {output} -t {threads}"""
 elif config['reference'] == 'transcriptome':
     rule pre_compute_visualization:
         input:
-            site_tab="outputs/{sample}.flt.genome.tab",
-            mole_level_bed="outputs/{sample}.prediction.genome.txt",
-            ref = "intermediates/reference/genome.fa",
-            cDNA_mole_input = "outputs/{sample}.prediction.txt",
-            candidate_sites = "intermediates/reference/{sample}.candidate_sites.tab"
+            site_tab="outputs/"+config['sample']+".flt.genome.tab",
+            mole_level_bed="outputs/"+config['sample']+".prediction.transcriptome.txt",
+            ref = "intermediates/reference/"+config['sample']+".genome.fa",
+            candidate_sites = config['ref_candidate_sites_file']
+        params:
+           reference_type = "transcriptome"
+           isoform_read_count = 10
         output:
-            directory("outputs/precomputed_visualization/{sample}/")
+            sorted_mole_level_bed="outputs/"+config['sample']+".prediction.transcriptome.sorted.txt",
+            mole_level_isoform_read_counts="outputs/"+config['sample']+".isoform_read_counts.txt",
+            directory("outputs/precomputed_visualization/"+config['sample']+"/")
         threads: 12
+
         resources:
-            runtime= 120
+            runtime= 12 * 60
         shell:
-            """python scripts/prep_visualization.py --candidate_sites {input.candidate_sites} --site_level_bed {input.site_tab} --mole_level_bed {input.mole_level_bed} --cDNA_mole_input {input.cDNA_mole_input} -ref {input.ref} -o {output} -t {threads}"""
+            """ 
+            sort -S 80% -k 3,3 -k 2,2 {output.mole_level_bed} > {output.sorted_mole_level_bed}
+            # awk -v OFS='\t' '!seen[$2, $3]++ {print $2,$3}' {output.sorted_mole_level_bed} > {output.mole_level_isoform_read_counts}
+            # python scripts/subsample_reads.py -i {output.mole_level_isoform_read_counts} > {output.selected_reads}
+            # awk -v OFS='\t' 'NR==FNR{check[$0];next} $2 in check' {output.selected_reads} {output.mole_level_bed} | sort -S 80% -k 3,3 -k 2,2 > {output.sorted_mole_level_bed}
+            python scripts/prep_visualization.py --candidate_sites {input.candidate_sites} --site_level_bed {input.site_tab} --mole_level_bed {input.sorted_mole_level_bed} --reference_type {params.reference_type} -ref {input.ref} -o {output} -t {threads} --isoform_read_list {output.mole_level_isoform_read_counts} --isoform_read_count {params.isoform_read_count}
+            """
+
+#"cat 'transID\ttrans_position\tnum_edit\tread_cov\tedit_ratio\teverage_edit_score\tchr\tposition\tgene_id\tstrand\tREDIportal\tSNP\tm6A_motif\tALU' {input.site_tab} > {input.site_tab}" && "cat 'transID\ttrans_position\tnum_edit\tread_cov\tedit_ratio\teverage_edit_score\tchr\tposition\tgene_id\tstrand\tREDIportal\tSNP\tm6A_motif\tALU' {input.mole_level_bed} > {input.mole_level_bed}

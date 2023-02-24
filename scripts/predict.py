@@ -13,6 +13,7 @@ import sys
 from keras.utils.io_utils import HDF5Matrix
 import h5py
 #os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+
 #sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import tensorflow as tf
 from keras.backend.tensorflow_backend import set_session
@@ -26,17 +27,20 @@ nb_classes = 2 #P1 P2 N
 def run_model(**kwargs):
     '''config CPU parallelization'''
     if kwargs['device'] == 'CPU':
+       os.environ["CUDA_VISIBLE_DEVICES"] = "-1"  # Force TF to use only the CPU
        config = tf.ConfigProto(intra_op_parallelism_threads=kwargs['threads'],
                      inter_op_parallelism_threads=kwargs['threads'],
                      allow_soft_placement=True,
                      device_count={'CPU': kwargs['threads']})
        
+       config.gpu_options.allow_growth = True
        sess = tf.Session(config=config)
        set_session(session=sess)
     elif kwargs['device'] == 'GPU':
          gpu_options = tf.GPUOptions()
-         gpu_options.allow_growth = True
+         #gpu_options.allow_growth = True
          config = tf.ConfigProto(gpu_options=gpu_options)
+         config.gpu_options.allow_growth = True#
          #config.gpu_options.per_process_gpu_memory_fraction=0.4
          sess = tf.Session(config=config)
          set_session(session=sess)

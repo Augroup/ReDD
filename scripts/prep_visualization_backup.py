@@ -49,7 +49,7 @@ def get_cigar(sites_list,score_list,thres):
     if reference_start_score >= thres:
         cigar_list.append((7,1))
     else:
-        cigar_list.append((3,1))
+        cigar_list.append((7,1))
     if len(sites_list) > 1:
         for pos,score in zip(sites_list[1:],score_list[1:]):
             distance = pos - previous_pos + 1 - 2
@@ -58,15 +58,15 @@ def get_cigar(sites_list,score_list,thres):
                 if score >= thres:
                     cigar_list.append((7,1))
                 else:
-                    cigar_list.append((3,1))
+                    cigar_list.append((7,1))
             elif distance == 0:
                 if score >= thres:
                     cigar_list.append((7,1))
                 else:
-                    cigar_list.append((3,1))
+                    cigar_list.append((7,1))
             previous_pos = pos
     return cigar_list
-def get_query_qualities(score_list,thres):
+def get_query_qualities(score_list):
     query_qualities = []
     color_thres = 0.5
     minQ = 5
@@ -83,8 +83,6 @@ def get_query_qualities(score_list,thres):
      [148, 0, 0, 0.9],
      [148, 0, 0, 1.0]]
     for score in score_list:
-        if score < thres:
-            continue
         if score < 0:
             score = 0
         if score > 1:
@@ -93,13 +91,11 @@ def get_query_qualities(score_list,thres):
         Q = int(minQ+(maxQ-minQ)*alpha)
         query_qualities.append(Q)
     return array.array('B',query_qualities)
-def get_query_sequence(score_list,thres):
+def get_query_sequence(score_list):
     query_sequences = []
     color_thres = [i/10 for i in range(1,11)]
     base_list = ['A' for i in range(3)] + ['T' for i in range(4)] +['C'] + ['G' for i in range(2)]
     for score in score_list:
-        if score < thres:
-            continue
         if score < 0:
             score = 0
         if score > 1:
@@ -111,7 +107,7 @@ def get_query_sequence(score_list,thres):
 def get_line_marker(mole_path,threads):
     '''
     Split the file into THREADS chunks
-    Split by read
+    !Split by read
     '''
     file_stats = os.stat(mole_path)
     total_bytes = file_stats.st_size
@@ -153,76 +149,13 @@ def get_line_marker(mole_path,threads):
     for i in range(threads):
          line_marker.append((byte_marker[i],byte_marker[i+1]))
     return line_marker
-def get_line_marker_by_isoform(mole_path,threads):
-    '''
-    Split the file into THREADS chunks by isoform
-    '''
-    file_stats = os.stat(mole_path)
-    total_bytes = file_stats.st_size
-    chunksize, extra = divmod(total_bytes, threads)
-    if extra:
-        chunksize += 1
-    byte_marker = []
-    previous_isoform_name = ''
-    with open(mole_path,'r') as f:
-        for i in range(threads):
-            if i == 0:
-                start_offset = 0
-                for line in f:
-                    if line[0] != '#':
-                        break
-                    start_offset += len(line)
-            else:
-                f.seek(i*chunksize)
-                f.readline()
-                while True:
-                    line = f.readline()
-                    isoform_name = line.split('\t')[2]
-                    if previous_isoform_name == '':
-                        # first (possible) incomplete line. Just read it.
-                        previous_isoform_name = isoform_name
-                        start_offset = f.tell()
-                    else:
-                        if previous_isoform_name != isoform_name:
-                            # new isoform
-                            previous_isoform_name = ''
-                            break
-                        else:
-                            # still current isoform
-                            previous_isoform_name = isoform_name
-                            start_offset = f.tell()
-            byte_marker.append(start_offset)
-    byte_marker.append(total_bytes)
-    line_marker = []
-    for i in range(threads):
-         line_marker.append((byte_marker[i],byte_marker[i+1]))
-    return line_marker
-def get_score_str(sites_list,rounded_score_list):
-    score_list_with_gap = []
-    reference_start = sites_list[0]
-    reference_start_score = rounded_score_list[0]
-    previous_pos = reference_start
-    score_list_with_gap.append(reference_start_score)
-    if len(sites_list) > 1:
-        for pos,score in zip(sites_list[1:],rounded_score_list[1:]):
-            distance = pos - previous_pos + 1 - 2
-            if distance > 0:
-                for i in range(distance):
-                    score_list_with_gap.append('0')
-                score_list_with_gap.append(score)
-            elif distance == 0:
-                score_list_with_gap.append(score)
-            previous_pos = pos
-    return '|'.join(score_list_with_gap)
-def write_to_bam(old_read_id,old_read_sites,old_read_info,reference_id_dict,thres,reference_type,output_handle,isoform_read_list_df_rows):
+def write_to_bam(old_read_id,old_read_sites,old_read_info,reference_id_dict,thres,reference_type,output_handle):
     score_list = []
     sites_list = []
     old_read_sites = sorted(old_read_sites,key=lambda x:x[0])
     for pos,score in old_read_sites:
         score_list.append(float(score))
         sites_list.append(pos)
-    if len(np.array(score_list)[np.array(score_list) >= thres]) == 0:
-        return isoform_read_list_df_rows
     seg = pysam.AlignedSegment()
     seg.query_name = str(old_read_id)
     seg.flag = 0 if old_read_info['strand'] == '+' else 16
@@ -230,23 +163,16 @@ def write_to_bam(old_read_id,old_read_sites,old_read_info,reference_id_dict,thre
     seg.reference_id = reference_id_dict[old_read_info['chr_name']]
     seg.reference_start = sites_list[0] - 1
     seg.mapping_quality = 60
-    seg.query_sequence = get_query_sequence(score_list,thres)
-    seg.query_qualities = get_query_qualities(score_list,thres)
-
-
-    rounded_score_list = [str(int(100*round(score,2))) for score in score_list]
-    rounded_score_str = get_score_str(sites_list,rounded_score_list)
-    score_str = str(round(np.mean(np.array(score_list)[np.array(score_list)>=thres]),2))
+    seg.query_sequence = get_query_sequence(score_list)
+    seg.query_qualities = get_query_qualities(score_list)
+    score_str = str(round(np.mean(score_list),2))
 #                 seg.tags = [('SC',get_color(np.mean(score_list)),'Z'),('ML',array.array('f',score_list),'f')]
-    tags = [('ML',f'Score:{score_str}','Z'),('MO',rounded_score_str,'Z')]
+    tags = [('SC',get_color(np.mean(score_list)),'Z'),('ML',f'Score:{score_str}','Z')]
     if reference_type == 'transcriptome':
         if old_read_info['isoform'] != '':
             tags.append(('TT',old_read_info['isoform'],'Z'))
-            tags.append(('RG',old_read_info['isoform'],'Z'))
-        isoform_read_list_df_rows.append([str(old_read_id),old_read_info['isoform']])
     seg.tags = tags
     output_handle.write(seg)
-    return isoform_read_list_df_rows
 def annotation_to_bam(gtf_path,reference_path,temp_folder):
     transcript_dict = {}
     with open(gtf_path) as f:
@@ -295,11 +221,11 @@ def mole_info_to_bam_worker(mole_path,reference_type,reference_id_dict,reference
     #             read_isoform_mapping[read_id] = isoform
     reference_fasta = pysam.FastaFile(reference_path)
     num_processsed_reads = 0
-    isoform_read_list_df_rows = []
     old_read_id = ''
     old_read_sites = []
     old_read_info = {}
     temp_folder = f'{mole_output_dir}/temp/'
+    Path(temp_folder).mkdir(exist_ok=True,parents=True)
     output_handle = pysam.AlignmentFile(f'{temp_folder}/{worker_id}.bam', "wb",reference_names=reference_fasta.references,reference_lengths=reference_fasta.lengths,threads=1)
     with open(mole_path,'r') as f:
         f.seek(start_file_pos)
@@ -312,16 +238,12 @@ def mole_info_to_bam_worker(mole_path,reference_type,reference_id_dict,reference
             fields = line.split('\t')
             if reference_type == 'transcriptome':
                 read_id,isoform,strand,score = fields[1],fields[2],fields[4],fields[5]
-                # if read_list_df is not None and read_id not in read_list_set:
-                #     continue
                 if len(fields) == 8:
                     chr_name,start_pos = fields[6],fields[7]
                 else:
                     continue
             elif reference_type == 'genome':
                 [_,read_id,chr_name,start_pos,strand,score] = fields
-                # if read_list_df is not None and read_id not in read_list_set:
-                #     continue
 #             if float(score) < thres:
 #                 continue
             if chr_name not in reference_id_dict:
@@ -329,7 +251,7 @@ def mole_info_to_bam_worker(mole_path,reference_type,reference_id_dict,reference
             start_pos = int(start_pos)
             if read_id != old_read_id and old_read_id != '':
                 num_processsed_reads += 1
-                isoform_read_list_df_rows = write_to_bam(old_read_id,old_read_sites,old_read_info,reference_id_dict,thres,reference_type,output_handle,isoform_read_list_df_rows)
+                write_to_bam(old_read_id,old_read_sites,old_read_info,reference_id_dict,thres,reference_type,output_handle)
                 # new read
                 old_read_id = read_id
                 old_read_sites = []
@@ -341,62 +263,32 @@ def mole_info_to_bam_worker(mole_path,reference_type,reference_id_dict,reference
                 old_read_info['isoform'] = isoform
         # if reach last line of file
         if len(old_read_info) != 0:
-            isoform_read_list_df_rows = write_to_bam(old_read_id,old_read_sites,old_read_info,reference_id_dict,thres,reference_type,output_handle,isoform_read_list_df_rows)
+            write_to_bam(old_read_id,old_read_sites,old_read_info,reference_id_dict,thres,reference_type,output_handle)
             output_handle.close()
-    return isoform_read_list_df_rows
-def mole_info_to_bam(mole_path,reference_id_dict,reference_path,gtf_path,mole_output_dir,reference_type,threads,isoform_read_count):
-    # if reference_type == 'transcriptome':
-    #     line_marker = get_line_marker_by_isoform(mole_path,threads)
-    # else:
+def mole_info_to_bam(mole_path,reference_id_dict,reference_path,gtf_path,mole_output_dir,reference_type,threads):
     line_marker = get_line_marker(mole_path,threads)
     temp_folder = f'{mole_output_dir}/temp/'
-    Path(temp_folder).mkdir(exist_ok=True,parents=True)
+    thres = 0.5
+    pool = mp.Pool(threads+1)
+    futures = []
+    all_bam_files = []
+    for marker,i in zip(line_marker,range(threads)):
+        all_bam_files.append(f'{temp_folder}/{i+1}.bam')
+        futures.append(pool.apply_async(mole_info_to_bam_worker,(mole_path,reference_type,reference_id_dict,reference_path,mole_output_dir,i+1,thres,marker,)))
     annot_bam_path = annotation_to_bam(gtf_path,reference_path,temp_folder)
-    for thres_index in range(9,0,-1):
-        thres = thres_index/10
-        pool = mp.Pool(threads+1)
-        futures = []
-        all_bam_files = []
-        isoform_read_list_df_rows = []
-        for marker,i in zip(line_marker,range(threads)):
-            all_bam_files.append(f'{temp_folder}/{i+1}.bam')
-            futures.append(pool.apply_async(mole_info_to_bam_worker,(mole_path,reference_type,reference_id_dict,reference_path,mole_output_dir,i+1,thres,marker,)))
-        # all_bam_files.append(annot_bam_path)
-        for future in futures:
-            isoform_read_list_df_rows += future.get()
-        pool.close()
-        pool.join()
-        sorted_bam = f'{mole_output_dir}/molecule_level_thres_{thres_index}.sorted.bam'
-        bam = f'{mole_output_dir}/molecule_level_{thres_index}.bam'
-        if len(isoform_read_list_df_rows) != 0:
-            isoform_read_list_df = pd.DataFrame(isoform_read_list_df_rows,columns=['ID','Isoform'])
-            def sample_or_keep(rows,count):
-                if len(rows) > count:
-                    return rows.sample(n=count)
-                else:
-                    return rows
-            isoform_read_list_df.groupby('Isoform').apply(lambda rows:sample_or_keep(rows,isoform_read_count))['ID'].to_csv(f'{temp_folder}/read_list.txt',sep='\t',index=False,header=False)
-            all_filtered_bam_files = []
-            for bam_file,i in zip(all_bam_files,range(threads)):
-                filtered_bam_file = f'{temp_folder}/{i+1}.filtered.bam'
-                pysam.view(bam_file,'-@',str(threads),'-N',f'{temp_folder}/read_list.txt','-bho',filtered_bam_file,catch_stdout=False)
-                all_filtered_bam_files.append(filtered_bam_file)
-            all_bam_files = all_filtered_bam_files
-
-        params = ['-@',str(threads),'-f',bam]+(all_bam_files+[annot_bam_path])
-        pysam.merge(*params)
-        pysam.sort('-@',str(threads),"-o",sorted_bam,bam)
-        pysam.index(sorted_bam)
-
-    # sorted_bam = f'{mole_output_dir}/molecule_level_subsampled.sorted.bam'
-    # bam = f'{mole_output_dir}/molecule_level_subsampled.bam'
-    # params = ['-@',str(threads),'-f',bam]+(all_bam_files)
-    # pysam.merge(*params)
-    # pysam.split()
-
-
-
-    for f in glob.glob(os.path.join(temp_folder, "*")):
+    all_bam_files.append(annot_bam_path)
+    for future in futures:
+        future.get()
+    pool.close()
+    pool.join()
+    sorted_bam = f'{mole_output_dir}/molecule_level.sorted.bam'
+    bam = f'{mole_output_dir}/molecule_level.bam'
+    params = ['-@',str(threads),'-f',bam]+all_bam_files
+    pysam.merge(*params)
+    pysam.sort('-@',str(threads),"-o",sorted_bam,bam)
+    # pysam.sort('-@',str(threads),'-t',"TT","-n","-o",sorted_bam,bam)
+    pysam.index(sorted_bam)
+    for f in glob.glob(os.path.join(temp_folder, "*.bam")):
         os.remove(f)
     os.rmdir(temp_folder)
 def pre_compute_site_level_thres(output_dir,header,sitelevel_df,candidate_df):
@@ -515,78 +407,6 @@ def pre_compute_site_level_thres(output_dir,header,sitelevel_df,candidate_df):
 #     score = np.array(candidate_df.loc[:,'score'], dtype=np.float64)
 #     bw.addEntries(chroms.tolist(), starts.tolist(), ends=ends.tolist(), values=score.tolist(),validate=True)
 #     bw.close()
-def get_isoform_site_cigar(sites_list,score_list,thres):
-    cigar_list = []
-    reference_start = sites_list[0]
-    reference_start_score = score_list[0]
-    previous_pos = reference_start
-    if reference_start_score >= thres:
-        cigar_list.append((7,1))
-    else:
-        cigar_list.append((7,1))
-    if len(sites_list) > 1:
-        for pos,score in zip(sites_list[1:],score_list[1:]):
-            distance = pos - previous_pos + 1 - 2
-            if distance > 0:
-                cigar_list.append((3,distance))
-                if score >= thres:
-                    cigar_list.append((7,1))
-                else:
-                    cigar_list.append((7,1))
-            elif distance == 0:
-                if score >= thres:
-                    cigar_list.append((7,1))
-                else:
-                    cigar_list.append((7,1))
-            previous_pos = pos
-    return cigar_list
-def get_isoform_score_str(sites_list,cov_list,mod_cov_list,score_list):
-    score_list_with_gap = [str(int(100*round(score_list[0],2)))]
-    cov_list_with_gap = [str(cov_list[0])]
-    mod_cov_list_with_gap = [str(mod_cov_list[0])]
-    reference_start = sites_list[0]
-    previous_pos = reference_start
-    if len(sites_list) > 1:
-        for pos,score,mod_cov,cov in zip(sites_list[1:],score_list[1:],mod_cov_list[1:],cov_list[1:]):
-            distance = pos - previous_pos + 1 - 2
-            if distance > 0:
-                for i in range(distance):
-                    score_list_with_gap.append('-')
-                    cov_list_with_gap.append('-')
-                    mod_cov_list_with_gap.append('-')
-                score_list_with_gap.append(str(int(100*round(score,2))))
-                cov_list_with_gap.append(str(cov))
-                mod_cov_list_with_gap.append(str(mod_cov))
-            elif distance == 0:
-                score_list_with_gap.append(str(int(100*round(score,2))))
-                cov_list_with_gap.append(str(cov))
-                mod_cov_list_with_gap.append(str(mod_cov))
-            previous_pos = pos
-    return '|'.join(score_list_with_gap),'|'.join(cov_list_with_gap),'|'.join(mod_cov_list_with_gap)
-def rows_to_read(rows,fout,reference_fasta):
-    rows = rows.sort_values(by=['rname','pos'])
-    start = min(rows['pos'])-1
-    isoform = next(iter(rows['isoform']))
-    chr_name = next(iter(rows['rname']))
-    gene_name = next(iter(rows['gene']))
-    sites_list = list(rows['pos'])
-    score_list = list(rows['cov_score'])
-    cov_list = [str(int(val)) for val in list(rows['cov'])]
-    mod_cov_list = [str(int(val)) for val in list(rows['mod_cov'])]
-    seg = pysam.AlignedSegment()
-    seg.query_name = isoform
-    seg.flag = 0
-    thres = 0.5
-    seg.cigar = get_isoform_site_cigar(sites_list,score_list,thres)
-    seg.reference_id = reference_fasta.references.index(chr_name)
-    seg.reference_start = start
-    seg.query_sequence = get_query_sequence(score_list)
-    seg.query_qualities = get_query_qualities(score_list)
-    seg.mapping_quality = 60
-    score_str,cov_str,mod_cov_str = get_isoform_score_str(sites_list,cov_list,mod_cov_list,score_list)
-    tags = [('GE',gene_name,'Z'),('MO',score_str,'Z'),('CV',cov_str,'Z'),('MV',mod_cov_str,'Z')]
-    seg.tags = tags
-    fout.write(seg)
 def isoform_site_to_bam(gtf_path,reference_path,trans_site_path,output_dir,threads):
     bam = f'{output_dir}/isoform_site.bam'
     sorted_bam = f'{output_dir}/isoform_site.sorted.bam'
@@ -621,13 +441,12 @@ def isoform_site_to_bam(gtf_path,reference_path,trans_site_path,output_dir,threa
         tags.append(('GE',gene,'Z'))
         seg.tags = tags
         fout.write(seg)
-    df = pd.read_csv(trans_site_path,sep='\t',header=None,usecols=[0,2,3,4,5,7,8,9])
-    df.columns = ['isoform','mod_cov','cov','cov_score','model_score','rname','pos','gene']
+    df = pd.read_csv(trans_site_path,sep='\t',header=None,usecols=[0,4,5,7,8,9])
+    df.columns = ['isoform','cov_score','model_score','rname','pos','gene']
     df.groupby('isoform').apply(lambda rows:rows_to_read(rows,fout,reference_fasta))
     fout.close()
     pysam.sort('-@',str(threads),"-o",sorted_bam,bam)
     pysam.index(sorted_bam)
-
 def main():
     # parse arguments
     parser = argparse.ArgumentParser()
@@ -638,7 +457,6 @@ def main():
     parser.add_argument('--candidate_sites', type=str, default=None,required=False,help="Candidate site file path")
     parser.add_argument('--annotation_gtf', type=str, default=None,required=False,help="Annotation_gtf_path")
     parser.add_argument('--reference_type', type=str, default='transcriptome',required=False,help="The type of reference used [transcriptome,genome] [default:transcriptome]")
-    parser.add_argument('--isoform_read_count', type=int, default=10,required=False,help="Number of reads each isoform will keep")
     parser.add_argument('-o','--output_dir', type=str, default=None,required=True,help="Output path")
     parser.add_argument('-t','--threads', type=int, default=1,required=False,help="threads")
     args = parser.parse_args()
@@ -672,25 +490,25 @@ def main():
         st_time = time.time()
         # mole level
         mole_path = args.mole_level_bed
-        mole_info_to_bam(mole_path,reference_id_dict,reference_path,args.annotation_gtf,output_dir,args.reference_type,args.threads,args.isoform_read_count)
+        mole_info_to_bam(mole_path,reference_id_dict,reference_path,args.annotation_gtf,output_dir,args.reference_type,args.threads)
         print('DONE in '+str(time.time()-st_time)+' seconds',flush=True)
-#     if args.site_level_bed is not None:
-#         print('Start pre-compute site level visualization',flush=True)
-#         st_time = time.time()
-#         sitelevel_df = pd.read_csv(args.site_level_bed,sep='\t',header=None,usecols=range(6))
-#         sitelevel_df.columns = ['rname','pos','methyl_cov','cov','cov_score','model_score']
-#         sitelevel_df = sitelevel_df[sitelevel_df['rname'].isin(set(reference_length_dict.keys()))]
-#         sitelevel_df['start'] = sitelevel_df['pos'] - 1
-#         sitelevel_df['end'] = sitelevel_df['pos']
-# #         sitelevel_df[['rname','start','end','cov_score']].to_csv(f'{output_dir}/cov_score.bedgraph',sep='\t',header=None,index=None)
-# #         sitelevel_df[['rname','start','end','model_score']].to_csv(f'{output_dir}/model_score.bedgraph',sep='\t',header=None,index=None)
-#         # site level
-#         header = []
-#         for rname in sitelevel_df['rname'].unique():
-#             header.append((rname,reference_length_dict[rname]))
-#         pre_compute_site_level_thres(output_dir,header,sitelevel_df,candidate_df)
-#         print('DONE in '+str(time.time()-st_time)+' seconds',flush=True)
-#     if args.trans_site_level_bed is not None:
-#         print('Start pre-compute isoform specific site level visualization',flush=True)
-#         isoform_site_to_bam(args.annotation_gtf,reference_path,args.trans_site_level_bed,output_dir,args.threads)
+    if args.site_level_bed is not None:
+        print('Start pre-compute site level visualization',flush=True)
+        st_time = time.time()
+        sitelevel_df = pd.read_csv(args.site_level_bed,sep='\t',header=None,usecols=range(6))
+        sitelevel_df.columns = ['rname','pos','methyl_cov','cov','cov_score','model_score']
+        sitelevel_df = sitelevel_df[sitelevel_df['rname'].isin(set(reference_length_dict.keys()))]
+        sitelevel_df['start'] = sitelevel_df['pos'] - 1
+        sitelevel_df['end'] = sitelevel_df['pos']
+#         sitelevel_df[['rname','start','end','cov_score']].to_csv(f'{output_dir}/cov_score.bedgraph',sep='\t',header=None,index=None)
+#         sitelevel_df[['rname','start','end','model_score']].to_csv(f'{output_dir}/model_score.bedgraph',sep='\t',header=None,index=None)
+        # site level
+        header = []
+        for rname in sitelevel_df['rname'].unique():
+            header.append((rname,reference_length_dict[rname]))
+        pre_compute_site_level_thres(output_dir,header,sitelevel_df,candidate_df)
+        print('DONE in '+str(time.time()-st_time)+' seconds',flush=True)
+    if args.trans_site_level_bed is not None:
+        print('Start pre-compute isoform specific site level visualization',flush=True)
+        isoform_site_to_bam(args.annotation_gtf,reference_path,args.trans_site_level_bed,output_dir,args.threads)
 main()
