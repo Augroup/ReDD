@@ -1,6 +1,7 @@
 #!/usr/bin/perl -w
 
 # $result_dir="/fs/project/PCON0009/Au-scratch2/ying/StemCell/RNAdirect/reditools2/1-Analysis/threshold_evaluation/hg19tohg38";
+no warnings;
 $out=$ARGV[1];
 $ref=$ARGV[0];
 open(IN, $ref) or die("Could not open file IN.\n");

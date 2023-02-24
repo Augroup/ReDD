@@ -147,10 +147,10 @@ def extract_base_from_sam(molecule,ref_chr,sam_info):
         try:
             base = ref_chr[j_ref].upper() #aligned position start from 1
         except:
-            print("error!!!")
-            print(chrom)
-            print(j_ref+1)
-            print(len(ref_chr))
+            #print("error!!!")
+            #print(chrom)
+            #print(j_ref+1)
+            #print(len(ref_chr))
             print("Reference does not match bam file")
         
         if (base == center and strand ==0) or (base == compACGT[center] and strand !=0):
@@ -223,7 +223,7 @@ def process_signal_for_one_read(read_id,mole,summary_one_read,read_information,r
         strand="+" #for + 0 for -
         if center_index>len(seq_frags_ref_):
               print("error:"+str(read_information['read_id'])+":"+str(read_information['chrom'])+"-"+str(i))
-              print(seq_frags_ref_)
+              #print(seq_frags_ref_)
         
         if seq_frags_ref_[center_index] == 'T':
                 #print(seq_frags_ref_)
@@ -280,7 +280,7 @@ def get_summary_and_sam_info(read_id_set):
                  #sam_info[molecule].append(line)
     
     #print("load mapping information over\n")
-    debuginfoStr("load mapping information over")
+    #debuginfoStr("load mapping information over")
     #G1+G2=369+352
     #get guppy summary info
     summary={}
@@ -300,7 +300,7 @@ def get_summary_and_sam_info(read_id_set):
             
             summary[info[read_id]]=[float(info[med_id]),float(info[mad_id])]
     
-    debuginfoStr("load summary")
+    #debuginfoStr("load summary")
     return sam_info,summary
 
 def process_signals(args):
@@ -395,10 +395,10 @@ def listener(msgs_queue,cachefile,windowsize,featuredim,maxoutputlen):
             fragments,labels_ref,labels_call,info_list,num_reads = msg
             # for debuging
             total_num_reads += num_reads
-            if total_num_reads // 1e4 > num_reported:
-                print(f'Processed {total_num_reads} reads',flush=True)
-                print(f'Processed {saved_size} signals',flush=True)
-                num_reported += 1
+            #if total_num_reads // 1e4 > num_reported:
+            #    print(f'Processed {total_num_reads} reads',flush=True)
+            #    print(f'Processed {saved_size} signals',flush=True)
+            #    num_reported += 1
             
             h5f['info'].resize((saved_size+len(info_list),))
             h5f['info'][saved_size:,]=info_list
@@ -489,7 +489,7 @@ def dump_coveragepass(coveragefile,coveragecutoff,threads):
         future.get()
     pool.close()
     pool.join()
-    print('coveragepass dumped',flush=True)
+    #print('coveragepass dumped',flush=True)
 def get_eventIn_offset(eventIn,threads):
     all_reads_id = []
     with open(eventIn) as fidIn5:
@@ -511,7 +511,7 @@ def get_eventIn_offset(eventIn,threads):
                 all_reads_id.append(read_id)
     num_reads = len(line_offset)
     assert len(all_reads_id) == num_reads
-    print(f'Total number of reads {num_reads}',flush=True)
+    #print(f'Total number of reads {num_reads}',flush=True)
     chunksize, extra = divmod(num_reads, threads)
     if extra:
         chunksize += 1
@@ -560,8 +560,9 @@ if __name__ == "__main__":
                         help="temp folder")
     
     args = parser.parse_args()
-    for k, v in vars(args).items():
-        print(k, ':', v)
+    #for k, v in vars(args).items():
+    #    
+    #    #print(k, ':', v)
     
     center=args.center
     nt=args.nt
@@ -597,9 +598,9 @@ if __name__ == "__main__":
     page_size = 16384
     if coveragefile is not None:
         dump_coveragepass(coveragefile,args.coveragecutoff,THREADS)
-        debuginfoStr("dump coveragepass file")
+        #debuginfoStr("dump coveragepass file")
     ref_dict = dump_ref(Ref,dump_to_disk)
-    debuginfoStr("read reference over")
+    #debuginfoStr("read reference over")
     if candidate_file is not None:
         candidate_sites = {}
         with open(candidate_file) as file:
@@ -611,9 +612,9 @@ if __name__ == "__main__":
                else:
                   candidate_sites[chr_+"-"+pos_]=float(line.split("\t")[8])
     
-    debuginfoStr("load candidate_file")
+    #debuginfoStr("load candidate_file")
     list_of_offsets,all_reads_id,chunksize = get_eventIn_offset(eventIn,THREADS)
-    debuginfoStr("get eventIn offset")
+    #debuginfoStr("get eventIn offset")
     manager = mp.Manager()
     pool = mp.Pool(THREADS+1)
     msgs_queue = manager.Queue() 

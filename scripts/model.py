@@ -745,7 +745,7 @@ def generator_IVT(IVT_pos_file,IVT_neg_file,real_candidate_files,real_noncandida
             yield([x,np.expand_dims(y_ref,axis=-1),np.expand_dims(y_call,axis=-1)],[np.expand_dims(y_ref,axis=-1), np.expand_dims(y_call, -1),mod_label,np.expand_dims(ratio_label,-1)])
 
 
-def batch_predict(hdf5filelist,modellist,outputfile,maxoutputlen=13,batch_size=1000,verbose=1,featuredim=3,windowsize=9,printref=False):
+def batch_predict(hdf5filelist,modellist,outputfile,maxoutputlen=13,batch_size=1000,verbose=0,featuredim=3,windowsize=9,printref=False):
     output = open(outputfile,'w')
     hdf5filelist=hdf5filelist.replace("\"",'')
     hdf5files = hdf5filelist.split(',')
@@ -970,7 +970,7 @@ class multihead_attention:
              print("Error in loading weights, check weights "+str(weight_dir))
         
         self.bn = False
-        self.model.summary()
+        #self.model.summary()
     
     def train(self,samplesize,real_candidate_files,real_noncandidate_files,KO_candidate_files,KO_noncandidate_files,IVT_pos_file=None,IVT_neg_file=None,batch_size=1000,epochs=100,x_valid=None,y_valid_ref=None,y_valid_call=None,val_mod_label=None,val_ratio_label=None,early_stop=0,bin=0.2,binsample=100,traintype="basecall",WT_label=1,binselecttype=1,steps_per_epoch=1000,sample_weights_flag=True,shuffleIVT=False,weight_exp=1,KO_noncandidate_weight=1,real_noncandidate_weight=1):
         print("debug training\n")
