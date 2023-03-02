@@ -1,4 +1,4 @@
-reference: 'genome' # genome or transcriptome
+reference: 'transcriptome' # genome or transcriptome
 center: 'A'
 nt: 4
 featurenum: 5
@@ -12,3 +12,8 @@ coverage_cutoff: 5
 ratio_cutoff: 0
 filter_snp: 'False'
 filter_m6A: 'False'
+in_alu_coverage: 10
+out_alu_coverage: 30
+in_alu_ratio: 0.1
+out_alu_ratio: 0.3
+add_m6A_reference: 'False'

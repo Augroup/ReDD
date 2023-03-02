@@ -11,6 +11,8 @@ import glob
 import array
 import re
 import bisect
+from patch_mp import patch_mp_connection_bpo_17560
+patch_mp_connection_bpo_17560()
 def get_color(score):
     score = float(score)
     r_val = int((1-score) * 255)
@@ -247,40 +249,41 @@ def write_to_bam(old_read_id,old_read_sites,old_read_info,reference_id_dict,thre
     seg.tags = tags
     output_handle.write(seg)
     return isoform_read_list_df_rows
-def annotation_to_bam(gtf_path,reference_path,temp_folder):
+def annotation_to_bam(gpd_path,reference_path,temp_folder,isoform_set):
     transcript_dict = {}
-    with open(gtf_path) as f:
+    with open(gpd_path) as f:
         for line in f:
             fields = line.split('\t')
-            if fields[2] == 'exon':
-                gene_name = re.findall('gene_id "([^"]*)"', fields[8])[0]
-                isoform_name = re.findall('transcript_id "([^"]*)"', fields[8])[0]
-                start_pos = int(fields[3])
-                end_pos = int(fields[4])
-                if isoform_name not in transcript_dict:
-                    transcript_dict[isoform_name]  = {'start_pos':[],'end_pos':[]}
+            gene_name = fields[0]
+            isoform_name = fields[1]
+            exon_start_pos = [int(pos) for pos in fields[9].strip().split(',') if pos != '']
+            exon_end_pos = [int(pos) for pos in fields[10].strip().split(',') if pos != '']
+            if isoform_name not in transcript_dict:
+                transcript_dict[isoform_name]  = {'start_pos':[],'end_pos':[]}
+                transcript_dict[isoform_name]['chr'] = fields[2]
+                transcript_dict[isoform_name]['strand'] = fields[3]
+            for start_pos,end_pos in zip(exon_start_pos,exon_end_pos):
                 transcript_dict[isoform_name]['start_pos'].append(start_pos)
                 transcript_dict[isoform_name]['end_pos'].append(end_pos)
-                transcript_dict[isoform_name]['chr'] = fields[0]
-                transcript_dict[isoform_name]['strand'] = fields[6]
     reference_fasta = pysam.FastaFile(reference_path)
     annot_bam_path = f'{temp_folder}/annotation.bam'
     fout = pysam.AlignmentFile(annot_bam_path,'wb',reference_names=reference_fasta.references,reference_lengths=reference_fasta.lengths,threads=1)
     for isoform in transcript_dict:
-        start = min(transcript_dict[isoform]['start_pos'])-1
-        end = max(transcript_dict[isoform]['end_pos'])
-        length = end - start + 1
-        seg = pysam.AlignedSegment()
-        seg.query_name = isoform
-        seg.flag = 0 if transcript_dict[isoform]['strand']=='+' else 16
-        seg.cigar = [(2,length)]
-        seg.reference_id = reference_fasta.references.index(transcript_dict[isoform]['chr'])
-        seg.reference_start = start
-        seg.mapping_quality = 60
-        tags = []
-        tags.append(('TT',isoform,'Z'))
-        seg.tags = tags
-        fout.write(seg)
+        if isoform in isoform_set:
+            start = min(transcript_dict[isoform]['start_pos'])
+            end = max(transcript_dict[isoform]['end_pos'])
+            length = end - start + 1
+            seg = pysam.AlignedSegment()
+            seg.query_name = isoform
+            seg.flag = 0 if transcript_dict[isoform]['strand']=='+' else 16
+            seg.cigar = [(2,length)]
+            seg.reference_id = reference_fasta.references.index(transcript_dict[isoform]['chr'])
+            seg.reference_start = start
+            seg.mapping_quality = 60
+            tags = []
+            tags.append(('TT',isoform,'Z'))
+            seg.tags = tags
+            fout.write(seg)
     fout.close()
     return annot_bam_path
 def mole_info_to_bam_worker(mole_path,reference_type,reference_id_dict,reference_path,mole_output_dir,worker_id,thres,marker):
@@ -335,7 +338,7 @@ def mole_info_to_bam_worker(mole_path,reference_type,reference_id_dict,reference
                 old_read_sites = []
                 old_read_info = {}
             old_read_id = read_id
-            old_read_sites.append((start_pos,score))   
+            old_read_sites.append((start_pos,score))
             old_read_info = {'read_id':read_id,'chr_name':chr_name,'strand':strand}
             if reference_type == 'transcriptome':
                 old_read_info['isoform'] = isoform
@@ -344,15 +347,14 @@ def mole_info_to_bam_worker(mole_path,reference_type,reference_id_dict,reference
             isoform_read_list_df_rows = write_to_bam(old_read_id,old_read_sites,old_read_info,reference_id_dict,thres,reference_type,output_handle,isoform_read_list_df_rows)
             output_handle.close()
     return isoform_read_list_df_rows
-def mole_info_to_bam(mole_path,reference_id_dict,reference_path,gtf_path,mole_output_dir,reference_type,threads,isoform_read_count):
+def mole_info_to_bam(mole_path,reference_id_dict,reference_path,gpd_path,mole_output_dir,reference_type,threads,isoform_read_count):
     # if reference_type == 'transcriptome':
     #     line_marker = get_line_marker_by_isoform(mole_path,threads)
     # else:
     line_marker = get_line_marker(mole_path,threads)
     temp_folder = f'{mole_output_dir}/temp/'
     Path(temp_folder).mkdir(exist_ok=True,parents=True)
-    annot_bam_path = annotation_to_bam(gtf_path,reference_path,temp_folder)
-    for thres_index in range(9,0,-1):
+    for thres_index in range(9,-1,-1):
         thres = thres_index/10
         pool = mp.Pool(threads+1)
         futures = []
@@ -368,6 +370,7 @@ def mole_info_to_bam(mole_path,reference_id_dict,reference_path,gtf_path,mole_ou
         pool.join()
         sorted_bam = f'{mole_output_dir}/molecule_level_thres_{thres_index}.sorted.bam'
         bam = f'{mole_output_dir}/molecule_level_{thres_index}.bam'
+        isoform_set = set()
         if len(isoform_read_list_df_rows) != 0:
             isoform_read_list_df = pd.DataFrame(isoform_read_list_df_rows,columns=['ID','Isoform'])
             def sample_or_keep(rows,count):
@@ -376,12 +379,15 @@ def mole_info_to_bam(mole_path,reference_id_dict,reference_path,gtf_path,mole_ou
                 else:
                     return rows
             isoform_read_list_df.groupby('Isoform').apply(lambda rows:sample_or_keep(rows,isoform_read_count))['ID'].to_csv(f'{temp_folder}/read_list.txt',sep='\t',index=False,header=False)
+            isoform_set = set(isoform_read_list_df['Isoform'].unique())
             all_filtered_bam_files = []
             for bam_file,i in zip(all_bam_files,range(threads)):
                 filtered_bam_file = f'{temp_folder}/{i+1}.filtered.bam'
                 pysam.view(bam_file,'-@',str(threads),'-N',f'{temp_folder}/read_list.txt','-bho',filtered_bam_file,catch_stdout=False)
                 all_filtered_bam_files.append(filtered_bam_file)
             all_bam_files = all_filtered_bam_files
+        
+        annot_bam_path = annotation_to_bam(gpd_path,reference_path,temp_folder,isoform_set)
 
         params = ['-@',str(threads),'-f',bam]+(all_bam_files+[annot_bam_path])
         pysam.merge(*params)
@@ -435,7 +441,7 @@ def pre_compute_site_level_thres(output_dir,header,sitelevel_df,candidate_df):
                 bw.addEntries(chroms.tolist(), starts.tolist(), ends=ends.tolist(), values=score.tolist(),validate=True)
 
             bw.close()
-    else:  
+    else:
         for thres in [0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9]:
             bw = pyBigWig.open(f"{output_dir}/cov_score_thres_{int(thres*10)}.bw", "wb")
 
@@ -485,9 +491,9 @@ def pre_compute_site_level_thres(output_dir,header,sitelevel_df,candidate_df):
     if len(chroms.tolist()) != 0:
         bw.addEntries(chroms.tolist(), starts.tolist(), ends=ends.tolist(), values=num_reads.tolist(),validate=True)
     bw.close()
-        
+
         # bw = pyBigWig.open(f"{output_dir}/model_score_thres_{int(thres*10)}.bw", "wb")
-        
+
         # bw.addHeader(header,maxZooms=0)
         # index = (sitelevel_df['model_score'] >= thres)
         # chroms = sitelevel_df.loc[index,'rname'].values
@@ -576,38 +582,39 @@ def rows_to_read(rows,fout,reference_fasta):
     seg = pysam.AlignedSegment()
     seg.query_name = isoform
     seg.flag = 0
-    thres = 0.5
+    thres = 0
     seg.cigar = get_isoform_site_cigar(sites_list,score_list,thres)
     seg.reference_id = reference_fasta.references.index(chr_name)
     seg.reference_start = start
-    seg.query_sequence = get_query_sequence(score_list)
-    seg.query_qualities = get_query_qualities(score_list)
+    seg.query_sequence = get_query_sequence(score_list,thres)
+    seg.query_qualities = get_query_qualities(score_list,thres)
     seg.mapping_quality = 60
     score_str,cov_str,mod_cov_str = get_isoform_score_str(sites_list,cov_list,mod_cov_list,score_list)
     tags = [('GE',gene_name,'Z'),('MO',score_str,'Z'),('CV',cov_str,'Z'),('MV',mod_cov_str,'Z')]
     seg.tags = tags
     fout.write(seg)
-def isoform_site_to_bam(gtf_path,reference_path,trans_site_path,output_dir,threads):
+def isoform_site_to_bam(gpd_path,reference_path,trans_site_path,output_dir,threads):
     bam = f'{output_dir}/isoform_site.bam'
     sorted_bam = f'{output_dir}/isoform_site.sorted.bam'
     reference_fasta = pysam.FastaFile(reference_path)
     gene_dict = {}
-    with open(gtf_path) as f:
+    with open(gpd_path) as f:
         for line in f:
             fields = line.split('\t')
-            if fields[2] == 'exon':
-                gene_name = re.findall('gene_id "([^"]*)"', fields[8])[0]
-                start_pos = int(fields[3])
-                end_pos = int(fields[4])
-                if gene_name not in gene_dict:
-                    gene_dict[gene_name]  = {'start_pos':[],'end_pos':[]}
+            gene_name = fields[0]
+            isoform_name = fields[1]
+            exon_start_pos = [int(pos) for pos in fields[9].strip().split(',') if pos != '']
+            exon_end_pos = [int(pos) for pos in fields[10].strip().split(',') if pos != '']
+            if gene_name not in gene_dict:
+                gene_dict[gene_name]  = {'start_pos':[],'end_pos':[]}
+                gene_dict[gene_name]['chr'] = fields[2]
+                gene_dict[gene_name]['strand'] = fields[3]
+            for start_pos,end_pos in zip(exon_start_pos,exon_end_pos):
                 gene_dict[gene_name]['start_pos'].append(start_pos)
                 gene_dict[gene_name]['end_pos'].append(end_pos)
-                gene_dict[gene_name]['chr'] = fields[0]
-                gene_dict[gene_name]['strand'] = fields[6]
     fout = pysam.AlignmentFile(bam,'wb',reference_names=reference_fasta.references,reference_lengths=reference_fasta.lengths,threads=1)
     for gene in gene_dict:
-        start = min(gene_dict[gene]['start_pos'])-1
+        start = min(gene_dict[gene]['start_pos'])
         end = max(gene_dict[gene]['end_pos'])
         length = end - start + 1
         seg = pysam.AlignedSegment()
@@ -636,7 +643,7 @@ def main():
     parser.add_argument('--mole_level_bed', type=str, default=None,required=False,help="Molecule level input bed")
     parser.add_argument('-ref','--reference_sequence', type=str, default=None,required=True,help="Reference sequence")
     parser.add_argument('--candidate_sites', type=str, default=None,required=False,help="Candidate site file path")
-    parser.add_argument('--annotation_gtf', type=str, default=None,required=False,help="Annotation_gtf_path")
+    parser.add_argument('--annotation', type=str, default=None,required=True,help="Annotation_path")
     parser.add_argument('--reference_type', type=str, default='transcriptome',required=False,help="The type of reference used [transcriptome,genome] [default:transcriptome]")
     parser.add_argument('--isoform_read_count', type=int, default=10,required=False,help="Number of reads each isoform will keep")
     parser.add_argument('-o','--output_dir', type=str, default=None,required=True,help="Output path")
@@ -672,25 +679,25 @@ def main():
         st_time = time.time()
         # mole level
         mole_path = args.mole_level_bed
-        mole_info_to_bam(mole_path,reference_id_dict,reference_path,args.annotation_gtf,output_dir,args.reference_type,args.threads,args.isoform_read_count)
+        mole_info_to_bam(mole_path,reference_id_dict,reference_path,args.annotation,output_dir,args.reference_type,args.threads,args.isoform_read_count)
         print('DONE in '+str(time.time()-st_time)+' seconds',flush=True)
-#     if args.site_level_bed is not None:
-#         print('Start pre-compute site level visualization',flush=True)
-#         st_time = time.time()
-#         sitelevel_df = pd.read_csv(args.site_level_bed,sep='\t',header=None,usecols=range(6))
-#         sitelevel_df.columns = ['rname','pos','methyl_cov','cov','cov_score','model_score']
-#         sitelevel_df = sitelevel_df[sitelevel_df['rname'].isin(set(reference_length_dict.keys()))]
-#         sitelevel_df['start'] = sitelevel_df['pos'] - 1
-#         sitelevel_df['end'] = sitelevel_df['pos']
-# #         sitelevel_df[['rname','start','end','cov_score']].to_csv(f'{output_dir}/cov_score.bedgraph',sep='\t',header=None,index=None)
-# #         sitelevel_df[['rname','start','end','model_score']].to_csv(f'{output_dir}/model_score.bedgraph',sep='\t',header=None,index=None)
-#         # site level
-#         header = []
-#         for rname in sitelevel_df['rname'].unique():
-#             header.append((rname,reference_length_dict[rname]))
-#         pre_compute_site_level_thres(output_dir,header,sitelevel_df,candidate_df)
-#         print('DONE in '+str(time.time()-st_time)+' seconds',flush=True)
-#     if args.trans_site_level_bed is not None:
-#         print('Start pre-compute isoform specific site level visualization',flush=True)
-#         isoform_site_to_bam(args.annotation_gtf,reference_path,args.trans_site_level_bed,output_dir,args.threads)
+    if args.site_level_bed is not None:
+        print('Start pre-compute site level visualization',flush=True)
+        st_time = time.time()
+        sitelevel_df = pd.read_csv(args.site_level_bed,sep='\t',header=None,usecols=range(6))
+        sitelevel_df.columns = ['rname','pos','methyl_cov','cov','cov_score','model_score']
+        sitelevel_df = sitelevel_df[sitelevel_df['rname'].isin(set(reference_length_dict.keys()))]
+        sitelevel_df['start'] = sitelevel_df['pos'] - 1
+        sitelevel_df['end'] = sitelevel_df['pos']
+#         sitelevel_df[['rname','start','end','cov_score']].to_csv(f'{output_dir}/cov_score.bedgraph',sep='\t',header=None,index=None)
+#         sitelevel_df[['rname','start','end','model_score']].to_csv(f'{output_dir}/model_score.bedgraph',sep='\t',header=None,index=None)
+        # site level
+        header = []
+        for rname in sitelevel_df['rname'].unique():
+            header.append((rname,reference_length_dict[rname]))
+        pre_compute_site_level_thres(output_dir,header,sitelevel_df,candidate_df)
+        print('DONE in '+str(time.time()-st_time)+' seconds',flush=True)
+    if args.trans_site_level_bed is not None:
+        print('Start pre-compute isoform specific site level visualization',flush=True)
+        isoform_site_to_bam(args.annotation,reference_path,args.trans_site_level_bed,output_dir,args.threads)
 main()

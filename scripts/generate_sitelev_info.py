@@ -4,6 +4,8 @@ import time
 import argparse
 import pickle
 import shutil
+from patch_mp import patch_mp_connection_bpo_17560
+patch_mp_connection_bpo_17560()
 def get_file_marker(filename,threads):
     file_size = Path(filename).stat().st_size
     single_thread_file_size, extra = divmod(file_size, threads)
@@ -252,7 +254,7 @@ if __name__ == "__main__":
     
     start_time = time.time()
     list_of_start_pos,file_size = get_file_marker(filename,threads)
-    num_bins = int(file_size // (1024**3))
+    num_bins = max(int(file_size // (1024**3)),1)
     print(num_bins,flush=True)
     if threads == 1:
         list_of_end_pos = [file_size]

@@ -12,7 +12,8 @@ np.random.seed(1234)
 import time
 from pathlib import Path
 import multiprocessing as mp
-
+from patch_mp import patch_mp_connection_bpo_17560
+patch_mp_connection_bpo_17560()
 def debuginfoStr(info):
     print(info,flush=True)
     with open('/proc/self/status') as f:
