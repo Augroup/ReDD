@@ -106,7 +106,7 @@ elif config['reference'] == 'transcriptome':
         run:
             shell("""samtools faidx {input.ref_genome}""")
             shell("""samtools faidx {input.ref_transcriptome}""")
-rule minimap2:
+checkpoint minimap2:
     input:
         ref_genome = "intermediates/reference/genome.fa",
         ref_transcriptome =  "intermediates/reference/transcriptome.fa",
@@ -125,7 +125,7 @@ rule minimap2:
             shell("minimap2 -G200k --secondary=no -ax splice -uf -k14 -t {threads} {input.ref_genome} {input.fastq} > {output}")
         elif config['reference'] == 'transcriptome':
             shell("minimap2 -G200k --secondary=no -ax map-ont -t {threads} {input.ref_transcriptome} {input.fastq} > {output}")
-rule minimap2_genome:
+checkpoint minimap2_genome:
     input:
         ref_genome = "intermediates/reference/genome.fa",
         fastq = "intermediates/fastq/{sample}_four_lines.fastq",
