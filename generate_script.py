@@ -232,7 +232,7 @@ echo "Please refer to log file in {output_folder}/REDD_logs/REDD_{output_name}.l
 
     if pipeline_mode == 'cluster':
        scriptsnakemake = f'''
-snakemake -c {max_cores_resources} -p outputs/precomputed_visualization/{output_name} --cluster "sbatch -A {account} -t {{resources.runtime}} -N 1 -c {{threads}}" --jobs {num_split} --set-scatter split={num_split} --latency-wait 60 --rerun-incomplete > REDD_logs/REDD_{output_name}.log 2>&1
+snakemake -c {max_cores_resources} -p outputs/precomputed_visualization/{output_name} --cluster "sbatch -A {account} -t {{resources.runtime}} --mem {{resources.mem_mb}} -N 1 -c {{threads}}" --jobs {num_split} --set-scatter split={num_split} --latency-wait 60 --rerun-incomplete > REDD_logs/REDD_{output_name}.log 2>&1
     '''
     elif pipeline_mode =='bash':
          scriptsnakemake = f'''
