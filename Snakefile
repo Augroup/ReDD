@@ -438,7 +438,7 @@ if config['reference'] == 'transcriptome':
             site_tab="outputs/"+"{sample}"+".flt.genome.tab",
         resources:
             runtime= 12 * 60,
-            mem_mb=  6 * 1024
+            mem_mb=  6 * 10 * 1024
         threads: 6
         shell:
             """sh scripts/cdna2genome.sh {input.cdna_molecule_input} {output.mole} {output.site_tab} {input.cdna2genome_tab} {input.cdna_site_tab}"""

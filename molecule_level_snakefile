@@ -1,0 +1,188 @@
+scattergather:
+    split=8
+
+num_split = workflow._scatter['split']
+configfile: "config.yaml"
+mole_input=[]
+if config['reference'] == 'genome':
+    mole_input.append("outputs/"+"{sample}"+".prediction.genome.txt")
+elif config['reference'] == 'transcriptome':
+    mole_input.append("outputs/"+"{sample}"+".prediction.txt")
+
+checkpoint generate_site_level_results:
+    input: 
+        mole_input
+    output: 
+        "outputs/{sample}.site.bed"
+    # group: 
+    #     "prediction_aggregation"
+    params:
+        coverage_cutoff = config['coverage_cutoff'], #not required, defualt is 5, can be choosed by user.
+        ratio_cutoff=0 #config['ratio_cutoff'] #not required,defualt is 0.1, can be choosed by user.
+    threads: 12
+    resources:
+        runtime= 12 * 60,
+        mem_mb= 12 * 6 * 1024
+    shell:
+        # """sh scripts/generate_sitelev_info.sh {input} {output}"""
+        """python scripts/generate_sitelev_info.py --input {input} --output {output} --threads {threads} --cov_cutoff {params.coverage_cutoff} --ratio_cutoff {params.ratio_cutoff} --mod_cov_cutoff 0 """
+##genome_sites filtering pipeline
+if config['reference'] == 'transcriptome':
+    rule create_cdna2genome_bed:
+        input:
+            annotation_gpd="intermediates/reference/gencode.v31.annotation.gpd",
+            # annotation_gpd=config['ref_annotation_file']
+        output:
+            cdna2genome_tab="intermediates/reference/gencode.v31.annotation.cdna2genome.tab",
+        resources:
+            runtime= 60,
+             mem_mb= 6 * 1024
+        threads: 1
+        shell:
+            "perl scripts/convert_gpd_cdna2genome.pl {input.annotation_gpd} {output.cdna2genome_tab}"
+else:
+    rule create_cdna2genome_bed:
+        output:
+            cdna2genome_tab="intermediates/reference/gencode.v31.annotation.cdna2genome.tab",
+        resources:
+            runtime= 1,
+            mem_mb=  1024
+        threads: 1
+        shell:
+            "touch {output.cdna2genome_tab}"
+if config['filter_m6A']=='True' or config['add_m6A_reference']=='True':
+    rule create_m6A_motif:
+        input:
+            ref_genome = "intermediates/reference/genome.fa"
+        output:
+            m6A_motif_bed="intermediates/reference/analysis_extract_m6A_motif.bed"
+        threads: 1
+        # group: 
+        #     "prediction_aggregation"
+        resources:
+            runtime=60,
+            mem_mb=  1024
+        shell:
+            """sh scripts/create_m6A_motif.sh {input.ref_genome} {output.m6A_motif_bed}"""
+else:
+    rule create_m6A_motif:
+        input:
+            ref_genome = "intermediates/reference/genome.fa"
+        output:
+            m6A_motif_bed="intermediates/reference/analysis_extract_m6A_motif.bed"
+        threads: 1
+        # group: 
+        #     "prediction_aggregation"
+        resources:
+            runtime=1,
+            mem_mb=  1024
+        shell:
+            """touch {output.m6A_motif_bed}"""
+
+if config['reference'] == 'genome':
+    site_tab="outputs/"+"{sample}"+".flt.genome.tab",
+elif config['reference'] == 'transcriptome':
+    site_tab="outputs/"+"{sample}"+".flt.transcriptome.tab"
+
+checkpoint site_filtering: #we need parameters to select from genome and cdna
+    input:
+        site_bed="outputs/"+"{sample}"+".site.bed",
+        alu_bed="intermediates/reference/Hg38_Alu.merge.bed",
+        # alu_bed=config['ref_alu_file'],
+        snp_bed="intermediates/reference/hg38_snp151.bed",
+        # snp_bed=config['ref_snp_file'],
+        m6A_motif_bed="intermediates/reference/analysis_extract_m6A_motif.bed",
+        REDI_txt="intermediates/reference/REDIportal_hg38.txt",
+        # REDI_txt=config['ref_REDIportal_file'],
+        cdna2genome_tab="intermediates/reference/gencode.v31.annotation.cdna2genome.tab",
+        annotation_gpd="intermediates/reference/gencode.v31.annotation.gpd"
+        # annotation_gpd=config['ref_annotation_file']
+    output:
+        temp_bed_1="outputs/"+"{sample}"+"-1.bed",
+        temp_bed_2="outputs/"+"{sample}"+"-2.bed",
+        site_tab=site_tab
+
+    params:
+        filter_snp=config['filter_snp'],
+        filter_m6A=config['filter_m6A'],
+        in_alu_coverage=config['in_alu_coverage'],
+        out_alu_coverage=config['out_alu_coverage'],
+        in_alu_ratio=config['in_alu_ratio'],
+        out_alu_ratio=config['out_alu_ratio'],
+        coverage_cutoff=config['coverage_cutoff'],
+        ratio_cutoff=config['ratio_cutoff']
+        
+    threads: 6
+    # group: 
+    #     "prediction_aggregation"
+    resources:
+        runtime=30,
+        mem_mb=  6 * 1024
+    run:
+        if config['reference'] == 'genome':
+            shell("""sh scripts/genome_site_filtering.sh {input.site_bed} {input.alu_bed} {input.snp_bed} {input.m6A_motif_bed} {input.REDI_txt} {output.temp_bed_1} {output.temp_bed_2} {output.site_tab} {params.filter_snp} {params.filter_m6A} {params.in_alu_coverage} {params.out_alu_coverage} {params.in_alu_ratio} {params.out_alu_ratio} {params.coverage_cutoff} {params.ratio_cutoff}""")
+        elif config['reference'] == 'transcriptome':
+            shell("""sh scripts/transcriptome_site_filtering.sh {input.site_bed} {input.alu_bed} {input.snp_bed} {input.m6A_motif_bed} {input.REDI_txt} {output.temp_bed_1} {output.temp_bed_2} {output.site_tab} {input.cdna2genome_tab} {input.annotation_gpd} {params.filter_snp} {params.filter_m6A}""")
+
+if config['reference'] == 'transcriptome':
+    checkpoint cdna2genome:
+        input:
+            cdna_molecule_input="outputs/"+"{sample}"+".prediction.txt",
+            cdna2genome_tab="intermediates/reference/gencode.v31.annotation.cdna2genome.tab",
+            cdna_site_tab="outputs/"+"{sample}"+".flt.transcriptome.tab",
+        output:
+            mole="outputs/"+"{sample}"+".prediction.transcriptome.txt",
+            site_tab="outputs/"+"{sample}"+".flt.genome.tab",
+        resources:
+            runtime= 12 * 60,
+            mem_mb=  6 * 10 * 1024
+        threads: 6
+        shell:
+            """sh scripts/cdna2genome.sh {input.cdna_molecule_input} {output.mole} {output.site_tab} {input.cdna2genome_tab} {input.cdna_site_tab}"""
+
+if config['reference'] == 'genome':
+    checkpoint pre_compute_visualization:
+        input:
+            site_tab="outputs/"+"{sample}"+".flt.genome.tab",
+            mole_level_bed="outputs/"+"{sample}"+".prediction.genome.txt",
+            ref = "intermediates/reference/genome.fa",
+            candidate_sites = "intermediates/reference/{sample}.candidate_sites.tab",
+            annotation_gpd="intermediates/reference/gencode.v31.annotation.gpd",
+            sorted_bam = "igv/{sample}.genome.sorted.bam",
+            sorted_bam_bai = "igv/{sample}.genome.sorted.bam.bai"
+        params:
+            reference_type = "genome"
+        output:
+            directory("outputs/precomputed_visualization/"+"{sample}"+"/")
+        threads: 12
+        resources:
+            runtime= 12 * 60,
+            mem_mb=  12 * 5 * 1024
+        shell:
+            """python scripts/prep_visualization.py --annotation {input.annotation_gpd} --candidate_sites {input.candidate_sites} --site_level_bed {input.site_tab} --mole_level_bed {input.mole_level_bed} --reference_type {params.reference_type} -ref {input.ref} -o {output} -t {threads}"""
+elif config['reference'] == 'transcriptome':
+    checkpoint pre_compute_visualization:
+        input:
+            site_tab="outputs/"+"{sample}"+".flt.genome.tab",
+            mole_level_bed="outputs/"+"{sample}"+".prediction.transcriptome.txt",
+            ref = "intermediates/reference/genome.fa",
+            annotation_gpd="intermediates/reference/gencode.v31.annotation.gpd",
+            candidate_sites = "intermediates/reference/{sample}.candidate_sites.tab",
+            cdna_site_tab = "outputs/{sample}.flt.transcriptome.tab",
+            sorted_bam = "igv/{sample}.genome.sorted.bam",
+            sorted_bam_bai = "igv/{sample}.genome.sorted.bam.bai"
+        params:
+           reference_type = "transcriptome",
+           isoform_read_count = 10,
+        output:
+            sorted_mole_level_bed = "outputs/"+"{sample}"+".prediction.transcriptome.sorted.txt",
+            output_dir = directory("outputs/precomputed_visualization/"+"{sample}"+"/")
+        threads: 12
+        resources:
+            runtime= 12 * 60,
+            mem_mb=  12 * 5 * 1024
+        shell:
+            """ 
+            sort -S 80% -k 3,3 -k 2,2 {input.mole_level_bed} > {output.sorted_mole_level_bed}
+            python scripts/prep_visualization.py --annotation {input.annotation_gpd} --trans_site_level_bed {input.cdna_site_tab} --candidate_sites {input.candidate_sites} --site_level_bed {input.site_tab} --mole_level_bed {output.sorted_mole_level_bed} --reference_type {params.reference_type} -ref {input.ref} -o {output.output_dir} -t {threads}  --isoform_read_count {params.isoform_read_count}
+            """
