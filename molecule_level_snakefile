@@ -156,8 +156,8 @@ if config['reference'] == 'genome':
             directory("outputs/precomputed_visualization/"+"{sample}"+"/")
         threads: 12
         resources:
-            runtime= 12 * 60,
-            mem_mb=  12 * 5 * 1024
+            runtime= 48 * 60,
+            mem_mb=  12 * 10 * 1024
         shell:
             """python scripts/prep_visualization.py --annotation {input.annotation_gpd} --candidate_sites {input.candidate_sites} --site_level_bed {input.site_tab} --mole_level_bed {input.mole_level_bed} --reference_type {params.reference_type} -ref {input.ref} -o {output} -t {threads}"""
 elif config['reference'] == 'transcriptome':
@@ -179,10 +179,10 @@ elif config['reference'] == 'transcriptome':
             output_dir = directory("outputs/precomputed_visualization/"+"{sample}"+"/")
         threads: 12
         resources:
-            runtime= 12 * 60,
-            mem_mb=  12 * 5 * 1024
+            runtime= 48 * 60,
+            mem_mb=  12 * 10 * 1024
         shell:
             """ 
-            sort -S 80% -k 3,3 -k 2,2 {input.mole_level_bed} > {output.sorted_mole_level_bed}
+            sort -S 50% -k 3,3 -k 2,2 {input.mole_level_bed} > {output.sorted_mole_level_bed}
             python scripts/prep_visualization.py --annotation {input.annotation_gpd} --trans_site_level_bed {input.cdna_site_tab} --candidate_sites {input.candidate_sites} --site_level_bed {input.site_tab} --mole_level_bed {output.sorted_mole_level_bed} --reference_type {params.reference_type} -ref {input.ref} -o {output.output_dir} -t {threads}  --isoform_read_count {params.isoform_read_count}
             """
