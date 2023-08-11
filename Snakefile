@@ -327,7 +327,7 @@ checkpoint generate_site_level_results:
         runtime= 12 * 60,
         mem_mb= 12 * 6 * 1024
     shell:
-        # """sh scripts/generate_sitelev_info.sh {input} {output}"""
+        #"""sh scripts/generate_sitelev_info.sh {input} {output}"""
         """python scripts/generate_sitelev_info.py --input {input} --output {output} --threads {threads} --cov_cutoff {params.coverage_cutoff} --ratio_cutoff {params.ratio_cutoff} --mod_cov_cutoff 0 """
 ##genome_sites filtering pipeline
 if config['reference'] == 'transcriptome':

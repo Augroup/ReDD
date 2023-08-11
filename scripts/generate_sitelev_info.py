@@ -210,7 +210,7 @@ def aggregate_and_generate_output(threads,temp_folder,outputname,reverse_all_has
             #                 break
             with open(f'{temp_folder}/{hashed_chr_name}','rb') as f:
                 output_dict = pickle.load(f)
-                with open(outputname,'w') as output:
+                with open(outputname,'a') as output:
                     for chr_name in output_dict:
                         for pos in sorted(output_dict[chr_name].keys()):
                             pos_coverage_val = output_dict[chr_name][pos]['pos_coverage']
@@ -296,7 +296,7 @@ if __name__ == "__main__":
     aggregate_and_generate_output(threads,temp_folder,outputname,reverse_all_hashed_chr_name_dict)
     running_time = time.time() - start_time
     print(f"Done in {running_time} s")
-    # shutil.rmtree(temp_folder, ignore_errors=True)
+    shutil.rmtree(temp_folder, ignore_errors=True)
 
 
 
