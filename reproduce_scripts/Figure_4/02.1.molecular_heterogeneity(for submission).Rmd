@@ -1,0 +1,289 @@
+---
+title: "02.1.site_distribution"
+output: html_notebook
+---
+
+### 1. Generating read~site matrix from raw data
+
+#### 1.1 filtering the bed and site files and generate matrix object
+
+```{r}
+library(data.table)
+library(tidyverse)
+library(Matrix)
+library(purrr)
+library(furrr)
+
+#---1. import dataset
+import_files <- function(samp, indir, type = c("sites","beds")){
+  type <- match.arg(type)
+  tab <- data.table::fread(input = file.path(indir, samp), sep="\t", header=FALSE)
+  if(type =="sites"){
+    colnames(tab) <- c('NGS_editing','read_id','transcript_id','transcript_loc','strand','editing_probability')
+  }else if(type =="beds"){
+    colnames(tab) <- c('transcript_id','transcript_loc','editing_cov','total_cov','editing_ratio','pred_ratio')
+  }
+  tab
+}
+
+#---2. filtering the bed files with several conditions
+
+filter_editing_bed <- function(bed_tab,
+                               edit_cov_cutoff = 1,
+                               total_cov_cutoff = 10,
+                               edit_ratio_cutoff = 0.01){
+  bed_tab %>% filter(editing_cov >= edit_cov_cutoff & total_cov >= total_cov_cutoff & editing_ratio >= edit_ratio_cutoff) %>% arrange(transcript_id,transcript_loc)
+}
+
+#---3. filtering the site level files with several conditions
+filter_editing_site <- function(site_tab, bed_tab, norm_val = FALSE){
+  if(norm_val){
+    site_tab$editing_probability <- ifelse(site_tab$editing_probability >= 0.5, 1, 0)
+  }
+  semi_join(x = site_tab, y = bed_tab, by = c('transcript_id', 'transcript_loc')) %>% arrange(transcript_id, transcript_loc, read_id)
+}
+
+#--- 4. get read~site matrix
+get_read_site_mat <- function(site_tab, min_reads = 10, min_sites = 2, ncores=1){
+  site_by_iso <- split(site_tab, site_tab$transcript_id)
+  #--filtering isoforms without enough reads
+  is_iso_keep <- purrr::map_lgl(.x = site_by_iso, .f = function(tab, min_read, min_site){
+    length(unique(tab$read_id)) >= min_read & length(unique(tab$transcript_loc)) >= min_site
+  }, min_read =  min_reads, min_site =  min_sites)
+  #--generating matrix
+  generate_mat <- function(tab){
+    editing_tab <- data.table::dcast(data = tab, formula = read_id~transcript_loc, fill = NA, value.var = "editing_probability")
+    editing_mat <- as.matrix(editing_tab[,-1])
+    row.names(editing_mat) <- editing_tab$read_id
+    Matrix::Matrix(editing_mat)
+  }
+  #---parallel calculation
+  future::plan(multicore, workers = ncores)
+  furrr::future_map(.x = site_by_iso[is_iso_keep],.f = generate_mat, .options = furrr::furrr_options())
+}
+
+#---5. filter read ~ site matrix
+
+filtering_both_bed_site <- function(samp, in_dir, out_dir, ncores=1){
+  candi_bed <- paste(samp,"_directRNA_onlycandidate_cov5_ratio0_modcov0.sitelev.bed.gz",sep="")
+  noncandi_bed <- paste(samp,"_directRNA_noncandidate_cov5_ratio0_modcov0.sitelev.bed.gz",sep="")
+  all_site <- paste(samp,"_directRNA_all_sites.txt.gz",sep="")
+  if(!exists(out_dir)){
+    dir.create(path = out_dir,recursive = TRUE, showWarnings = FALSE)
+  }
+  #=====1. filter files
+  print("1. Filtering isoforms and sites.")
+  #---bed files
+  candi_bed_tab <- import_files(samp = candi_bed, indir = in_dir, type = "beds")
+  candi_bed_tab$NGS_editing <- rep(TRUE,nrow(candi_bed_tab))
+  noncandi_bed_tab <- import_files(samp = noncandi_bed, indir = in_dir, type = "beds")
+  noncandi_bed_tab$NGS_editing <- rep(FALSE,nrow(noncandi_bed_tab))
+  all_bed_tab <- rbind(candi_bed_tab, noncandi_bed_tab)
+  all_bed_tab <- filter_editing_bed(bed_tab = all_bed_tab, edit_cov_cutoff = 1, total_cov_cutoff = 10, edit_ratio_cutoff = 0.01)
+  data.table::fwrite(x = all_bed_tab, file = file.path(out_dir, paste(samp, "_directRNA_all_cov10_ratio0.01_modcov0.sitelev.bed.gz", sep="")), sep = "\t")
+  
+  #---site files
+  all_site_tab <- import_files(samp = all_site, indir = in_path, type = "sites")
+  all_site_tab <- filter_editing_site(site_tab = all_site_tab, bed_tab = all_bed_tab, norm_val = FALSE)
+  data.table::fwrite(x = all_site_tab, file = file.path(out_dir, paste(samp,"_directRNA_all_site_filtered.txt.gz",sep="")),sep = "\t")
+  
+  #=====2. generate matrix
+  print("2. Generating site level matrix by each isoform.")
+  all_site_mat_by_iso <- get_read_site_mat(site_tab = all_site_tab, min_reads = 10, min_sites = 2, ncores= ncores)
+  saveRDS(object = all_site_mat_by_iso, file = file.path(out_dir, paste(samp,"_directRNA_all_site_filtered_mat.rds",sep="")))
+}
+
+#===============
+#--- running
+
+in_path <- '../01.raw_data_files'
+out_path <- '../03.processed_sites'
+
+samples <- c('H1-hESC', 'H1-DE', 'H1-PE', 'H1-PGC', 'H9-hESC', 'H9-DE', 'H9-PE')
+
+lapply(X = samples, FUN = filtering_both_bed_site, in_dir = in_path, out_dir = out_path, ncores = 16)
+
+```
+
+### 2. candidates analysis
+
+#### 2.1 heatmap plot
+
+```{r}
+in_path <- "../03.processed_sites/"
+samples <- c('H1-hESC', 'H1-DE', 'H1-PE', 'H1-PGC', 'H9-hESC', 'H9-DE', 'H9-PE')
+
+read_site_mat <- lapply(X = samples, FUN = function(samp,indir){
+  readRDS(file.path(indir,paste(samp,'_directRNA_all_site_filtered_mat.rds',sep='')))
+},indir = in_path)
+names(read_site_mat) <- samples
+
+#---1.filter matrix for visualization
+trim_mat <- function(mat,
+                     min_read_per_site = 0.5,
+                     min_site_per_read = 0.5){
+  read_keep <- apply(X = mat, MARGIN = 1, FUN = function(x){length(x[!is.na(x)])/length(x)}) >= min_site_per_read
+  site_keep <- apply(X = mat, MARGIN = 2, FUN = function(x){length(x[!is.na(x)])/length(x)}) >= min_read_per_site
+  mat_filter <- mat[read_keep, site_keep, drop = FALSE]
+  if(any(dim(mat_filter)==0)){return(NULL)}
+  if(any(dim(mat_filter) != dim(mat))){
+    mat_filter <- trim_mat(mat = mat_filter, min_read_per_site = min_read_per_site, min_site_per_read =  min_site_per_read)
+  }else{
+    mat_filter
+  }
+}
+
+#---2.plot heatmap for isoform matrix
+read_heatmap <-function(tx_mat,
+                        scale_ratio = FALSE,
+                        clust_method = 'ward.D2',
+                        prob_cutoff = 0.5,
+                        ...){
+  # 1. clustering
+  plot_mat <- as.matrix(tx_mat)
+  clust_mat <- plot_mat
+  clust_mat[is.na(clust_mat)] <- 0
+  if(scale_ratio){
+    clust_mat <- ifelse(clust_mat > prob_cutoff,1,0)
+    plot_mat <- clust_mat
+  }
+  clust_res <- hclust(d = dist(clust_mat), method = clust_method)
+  p <- pheatmap::pheatmap(mat = plot_mat[clust_res$order,], cluster_rows = F, cluster_cols = F, show_rownames = F, fontsize = 6)
+  p
+}
+
+#---3. visualize the heatmap
+site_visual_heatmap <-function(tx_id_list,
+                               samples = c('H1-hESC', 'H1-DE', 'H1-PE', 'H1-PGC', 'H9-hESC', 'H9-DE', 'H9-PE'),
+                               mat_list = read_site_mat,
+                               min_sites = 2,
+                               min_reads = 20,
+                               out_dir = "./",
+                               scale_ratio = FALSE,
+                               clustering = TRUE
+                               ){
+  samples <- match.arg(arg = samples, several.ok = TRUE)
+  mat_list <- lapply(X = mat_list[samples], FUN = function(mat_sample, tx_id_list){
+    mat_sample <- mat_sample[intersect(names(mat_sample),tx_id_list)]
+    mat_nrow <- sapply(X = mat_sample, FUN = nrow)
+    mat_ncol <- sapply(X = mat_sample, FUN = ncol)
+    
+  },tx_id_list = tx_id_list)
+  # 1. filtering transcripts
+  filter_mat <- lapply(X = read_site_mat, FUN = function(x, min_sites){
+  read_num <- sapply(x,nrow)
+  site_num <- sapply(x,ncol)
+  iso <- intersect(names(read_num[read_num > min_reads]), names(site_num[site_num > min_sites]))
+  x[iso]
+},min_sites = min_sites, min_reads = min_reads)
+}
+
+
+#---test for out methods
+H1_read_site_mat <- read_site_mat$`H1-hESC`
+H1_read_site_mat_trimmed <- lapply(H1_read_site_mat, trim_mat)
+
+
+plot_heatmap <- pbapply::pblapply(X = filter_transcript['H1-hESC'], FUN = function(x, out_path){
+  iso_id <- names(x)
+  for(i in iso_id){
+    plot_mat <- as.matrix(x[[i]])
+    clust_mat <- plot_mat
+    clust_mat[is.na(clust_mat)] <- 0
+    clust_res <- hclust(d = dist(clust_mat),method = 'ward.D2')
+    p <- pheatmap(mat = plot_mat[clust_res$order,],cluster_rows = F, cluster_cols = F, show_rownames = F, clustering_method = 'ward.D2', fontsize = 6)
+    ggsave(filename = file.path(out_path, paste(i,'.jpg',sep='')), plot = p,device = 'jpg', width = 3,height = 3, units = 'in')
+  }
+},out_path = out_path)
+out_path <- 'D:/Projects/RNA_editing/Project_processing/01.single-molecule/02.molecule_heterogeneity/Figure/candidate_heatmap/H1-hESC'
+iso <- 'ENST00000217971.8'
+
+```
+
+#### 4.1 STUB1-201 heatmap and heterogeneity
+
+```{r}
+in_path <- "../03.processed_sites/"
+samples <- c('H1-hESC', 'H1-DE', 'H1-PE', 'H1-PGC', 'H9-hESC', 'H9-DE', 'H9-PE')
+
+read_site_mat <- lapply(X = samples, FUN = function(samp,indir){
+  readRDS(file.path(indir,paste(samp,'_directRNA_all_site_filtered_mat.rds',sep='')))
+},indir = in_path)
+names(read_site_mat) <- samples
+
+iso <- 'ENST00000219548.9'
+H1_read_site_mat <- read_site_mat$`H1-hESC`[iso]
+H1_read_site_mat_trimmed <- lapply(H1_read_site_mat, trim_mat)
+
+STUB1_mat <- H1_read_site_mat[[iso]] |> as.matrix()
+STUB1_editing_site_num <- apply(STUB1_mat,1,function(x){
+  x <- x[!is.na(x)]
+  length(x[x>=0.5])
+})
+STUB1_editing_read_ratio <- STUB1_editing_site_num[STUB1_editing_site_num>0]/length(STUB1_editing_site_num)
+
+#---isoform level site editing ratio
+
+STUB1_editing_site_ratio <- apply(STUB1_mat,2,function(x){
+  x <- x[!is.na(x)]
+  length(x[x>=0.05])
+  })/nrow(STUB1_mat)
+
+#--- we select editing sites with high ratio
+selected_sites <- STUB1_editing_site_ratio[STUB1_editing_site_ratio>=0.2]
+selected_STUB1_mat <- STUB1_mat[,as.character(names(selected_sites))]
+selected_reads <- apply(selected_STUB1_mat,1,function(x){
+  y <- x[!is.na(x)]
+#  length(x[is.na(x)])<length(x) & length(y[y>=0.5])>0
+  length(y[y>=0.5])>0
+})
+
+selected_STUB1_mat2 <- selected_STUB1_mat[selected_reads,]
+
+plot_mat <- selected_STUB1_mat2
+
+library(pheatmap)
+library(ggplot2)
+p <- read_heatmap(plot_mat,clust_method = 'ward.D')
+
+ggsave(filename = '../05.candidate_sites/Figure/STUB1-201_heatmap_H1-hESC.pdf',plot = p,device = 'pdf', width = 3, height = 3, units = 'in')
+
+
+selected_STUB1_site_per_read <- apply(selected_STUB1_mat2,1,function(x){
+  x <- x[!is.na(x)]
+  length(x[x>=0.5])
+})
+
+table(selected_STUB1_site_per_read)
+sum(table(selected_STUB1_site_per_read))
+table(selected_STUB1_site_per_read)/sum(table(selected_STUB1_site_per_read))
+
+#---co editing num
+selected_STUB1_mat_norm <- selected_STUB1_mat2
+selected_STUB1_mat_norm <- ifelse(selected_STUB1_mat_norm>=0.05,1,0)
+selected_STUB1_mat_norm[is.na(selected_STUB1_mat_norm)] <-0
+selected_STUB1_mat_norm <- as.data.frame(selected_STUB1_mat_norm)
+table(selected_STUB1_mat_norm[,1:2])
+table(selected_STUB1_mat_norm[,2:3])
+table(selected_STUB1_mat_norm[,3:4])
+table(selected_STUB1_mat_norm[,4:5])
+table(selected_STUB1_mat_norm[,5:6])
+
+library(data.table)
+library(tidyverse)
+genomic_loc <- fread(input = '../../data_set/editing_tab/H1-hESC_directRNA.cdna_model.cov5.flt.tab',sep='\t')
+genomic_loc_STUB1_201 <- genomic_loc |> filter(V1 %in% iso) |> filter(V2 %in% colnames(selected_STUB1_mat2))
+
+H1_gpd <- fread(input = '../../../../dataset/annotation_files/Stem_cell_talon.flt_with_length.gpd',sep='\t')
+
+
+H1_gpd_STUB1_201 <- H1_gpd |> filter(V2 %in% iso)
+
+H1_gpd_STUB1_201_loc1 <- strsplit(H1_gpd_STUB1_201$V10,split = ',') |> unlist() |> as.numeric()
+H1_gpd_STUB1_201_loc2 <- strsplit(H1_gpd_STUB1_201$V11,split = ',') |> unlist() |> as.numeric()
+
+
+```
+
+
+

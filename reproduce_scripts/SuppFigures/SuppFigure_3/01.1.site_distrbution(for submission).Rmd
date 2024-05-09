@@ -1,0 +1,192 @@
+---
+title: "01.1.site_distribution"
+output: html_notebook
+---
+
+### 1.get the number of sites with/without A-to-I editing per read
+
+#### 1.1 Calculate the number of edited and non-edited A sites per read
+
+```{python}
+import gzip
+import csv
+import os
+
+samples = ['H1-hESC', 'H1-DE', 'H1-PE', 'H1-PGC', 'H9-hESC', 'H9-DE', 'H9-PE']
+in_path = '../01.raw_data_files'
+out_path = '../02.site_per_read'
+isExist = os.path.exists(out_path)
+if not isExist:
+   # Create a new directory because it does not exist
+   os.makedirs(out_path)
+
+for samp in samples:
+    input_file = os.path.join(in_path, samp + '_directRNA_all_sites.txt.gz')
+    output_file = os.path.join(out_path, samp + '_directRNA_all_site_statistics.txt.gz')
+
+    with gzip.open(input_file, 'rt') as f_in:
+        reader = csv.reader(f_in, delimiter='\t')
+
+        group3 = {}
+        count = {}
+
+        for row in reader:
+            col3 = row[2]
+            col2 = row[1]
+            col6 = float(row[5])
+
+            group3.setdefault(col3, {})
+            group3[col3].setdefault(col2, 0)
+            group3[col3][col2] += 1
+
+            count.setdefault(col3, {})
+            count[col3].setdefault(col2, {'0': 0, '1': 0})
+            # the cutoff of base with A-to-I editing is set to 0.5
+            if col6 >= 0.5:
+                count[col3][col2]['1'] += 1
+            else:
+                count[col3][col2]['0'] += 1
+
+    with gzip.open(output_file, 'wt', newline='') as f_out:
+        writer = csv.writer(f_out, delimiter='\t')
+
+        writer.writerow(['transcript_id', 'read_id', 'non_editing_A_count', 'editing_A_count'])
+
+        for col3 in group3:
+            for col2 in group3[col3]:
+                count_0 = count[col3][col2]['0']
+                count_1 = count[col3][col2]['1']
+                writer.writerow([col3, col2, count_0, count_1])
+
+    print("All files has been output:", output_file)
+    
+```
+
+The columns of output file are as follow:
+transcript_id: The gene isoform IDs;
+read_id: The sequenced read IDs;
+non_editing_count: The number of basess with non-edited A;
+editing_count: The number of bases with edited A;
+
+#### 1.2 Calculate the proportion of reads with A-to-I editing for each gene isoform
+
+```{r}
+library(tidyverse)
+library(data.table)
+
+in_path <- '../02.site_per_read'
+samples <- c('H1-hESC', 'H1-DE', 'H1-PE', 'H1-PGC', 'H9-hESC', 'H9-DE', 'H9-PE')
+
+read_site_num_list <- purrr::map(.x = samples, .f = function(x, in_dir){
+  file <- file.path(in_dir,paste(x,'_directRNA_all_site_statistics.txt.gz',sep=''))
+  tab <- data.table::fread(input = file, sep='\t',header=T, showProgress = FALSE)
+  tab$is_editing <-  ifelse(tab[[4]]==0,'without_editing','editing')
+  tab <- (table(tab$transcript_id, tab$is_editing))
+  edit_ratio <- tab[,1,drop=T]/rowSums(tab)
+  data.frame(transcript_id = row.names(tab), editing_read = tab[,1], non_editing_read = tab[,2], total_read = rowSums(tab), edit_ratio)
+},in_dir = in_path, .progress = TRUE)
+names(read_site_num_list) <- samples
+
+all_data_stat <- data.table::rbindlist(read_site_num_list, idcol = 'stage')
+dir.create(path = '../03.site_level_analysis',recursive = T)
+fwrite(all_data_stat,"../03.site_level_analysis/01.proportion_of_read_with_editing_per_gene_isoform.tsv.gz",sep="\t")
+
+```
+
+### 2. editing site level analysis
+
+#### 2.1 Proportion of read with A-to-I editing per isoform
+
+```{r}
+library(ggplot2)
+library(tidyplot)
+library(tidyverse)
+library(data.table)
+
+stat_path <- '../03.site_level_analysis'
+samples <- c('H1-hESC', 'H1-DE', 'H1-PE', 'H1-PGC', 'H9-hESC', 'H9-DE', 'H9-PE')
+
+all_data_stat <- data.table::fread(input = file.path(stat_path,'01.proportion_of_read_with_editing_per_gene_isoform.tsv.gz'),sep='\t')
+
+# we only select isoforms with more than 10 reads for visualization
+plot_frm <- all_data_stat %>% filter(total_read>=10)
+plot_frm$stage <- factor(plot_frm$stage, levels = samples)
+
+p <- ggplot(data = plot_frm, mapping = aes(x = stage, y = edit_ratio, fill = stage ))+
+  geom_boxplot(outlier.color = NA,width=.75)+
+  theme_clean()+
+  labs(main = "Proportion of reads with at least one editing site per isoform (coverage>=5)")+
+  scale_y_continuous(limits = c(0,1))+
+  scale_fill_manual(values = material.color.set(name = 'Developmental.basic', brightness = 3))
+
+p
+dir.create(path = '../03.site_level_analysis/figures/', recursive = T)
+ggsave(filename = "../03.site_level_analysis/figures/01.1.proportion_of_reads_with_editing_per_isoform_cov10.pdf",plot = p, device = 'pdf',width = 3,height = 2,units = 'in')
+
+wilcox.test(plot_frm[plot_frm$stage=='H1-hESC',]$edit_ratio,plot_frm[plot_frm$stage=='H1-DE',]$edit_ratio)
+wilcox.test(plot_frm[plot_frm$stage=='H1-hESC',]$edit_ratio,plot_frm[plot_frm$stage=='H1-PGC',]$edit_ratio)
+wilcox.test(plot_frm[plot_frm$stage=='H1-DE',]$edit_ratio,plot_frm[plot_frm$stage=='H1-PE',]$edit_ratio)
+wilcox.test(plot_frm[plot_frm$stage=='H1-DE',]$edit_ratio,plot_frm[plot_frm$stage=='H1-PGC',]$edit_ratio)
+
+wilcox.test(plot_frm[plot_frm$stage=='H9-hESC',]$edit_ratio,plot_frm[plot_frm$stage=='H9-DE',]$edit_ratio)
+wilcox.test(plot_frm[plot_frm$stage=='H9-DE',]$edit_ratio,plot_frm[plot_frm$stage=='H9-PE',]$edit_ratio)
+wilcox.test(plot_frm[plot_frm$stage=='H1-PGC',]$edit_ratio,plot_frm[plot_frm$stage=='H9-hESC',]$edit_ratio)
+
+
+```
+
+
+### 3. editing site on per read
+
+#### 3.1 get site number per read
+
+```{r}
+library(tidyverse)
+library(data.table)
+
+in_path <- '../02.site_per_read'
+samples <- c('H1-hESC', 'H1-DE', 'H1-PE', 'H1-PGC', 'H9-hESC', 'H9-DE', 'H9-PE')
+
+read_site_num_list <- purrr::map(.x = samples, .f = function(x, in_dir){
+  file <- file.path(in_dir,paste(x,'_directRNA_all_site_statistics.txt.gz',sep=''))
+  tab <- data.table::fread(input = file, sep='\t',header=T, showProgress = FALSE)
+  tab |> group_by(transcript_id) |> filter(n()>=10) |> ungroup()
+},in_dir = in_path, .progress = TRUE)
+names(read_site_num_list) <- samples
+
+all_data_stat <- data.table::rbindlist(read_site_num_list, idcol = 'stage')
+dir.create(path = '../03.site_level_analysis',recursive = T)
+fwrite(all_data_stat,"../03.site_level_analysis/01.proportion_of_editing_A_sites_per_read.tsv.gz",sep="\t")
+
+#---2. visualize the site distribution per sample
+read_site_tbl <- fread(input = '../03.site_level_analysis/01.proportion_of_editing_A_sites_per_read.tsv.gz',sep='\t')
+
+plot_frm <- read_site_tbl
+plot_frm$stage <- factor(plot_frm$stage, levels = samples)
+madian_val <- plot_frm %>% group_by(stage) %>% summarise(median_count = median(editing_A_count),mean_count = mean(editing_A_count))
+
+library(ggplot2)
+library(ggplot2)
+library(tidyplot)
+p <- ggplot(data = plot_frm, mapping = aes(x = log2(editing_A_count+1), fill = stage))+
+  geom_histogram(binwidth = 0.5)+
+  geom_vline(data = madian_val, mapping = aes(xintercept = log2(median_count+1)),linetype=2)+
+  theme_clean()+
+  scale_fill_manual(values = material.color.set(name = 'Developmental.basic', brightness = 3))+
+  scale_x_continuous(limits = c(0,10),breaks = seq(0,10,by=2))+
+  facet_wrap(.~stage, nrow=2,scales = 'free')
+
+p
+
+out_path <- '../03.site_level_analysis/Figures'
+dir.create(out_path,recursive = T)
+ggsave(filename = file.path(out_path,"Editing_site_num_distribution_on_read_level_cov_10_per_isoform.pdf"),plot = p,device = 'pdf',width = 5,height = 2,units = 'in')
+
+
+```
+
+
+
+
+
+

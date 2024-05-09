@@ -1,0 +1,202 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+### 1. pre-processing of read~site matrix
+
+#### 1.1 FUNCTION: trim read~site matrix data
+
+```{r}
+#' Trim read~site atrix with low coverage
+#'
+#' @param mat The matrix to be trimmed
+#' @param min_read_per_site The minimum percentage of reads coverage per A site. Default: 0.5.
+#' @param min_site_per_read The minimum percentage of A sites with per read. Default: 0.5.
+#'
+#' @return
+#' @export
+#'
+#' @examples
+trim_mat <- function(mat,
+                     min_read_num = 20,
+                     min_site_num = 2,
+                     min_read_per_site = 0.5,
+                     min_site_per_read = 0.5){
+  read_keep <- apply(X = mat, MARGIN = 1, FUN = function(x){length(x[!is.na(x)])/length(x)}) >= min_site_per_read
+  site_keep <- apply(X = mat, MARGIN = 2, FUN = function(x){length(x[!is.na(x)])/length(x)}) >= min_read_per_site
+  mat_filter <- mat[read_keep, site_keep, drop = FALSE]
+  if(nrow(mat_filter) < min_read_num || ncol(mat_filter) < min_site_num){return(matrix())}
+  if(any(dim(mat_filter) != dim(mat))){
+    mat_filter <- trim_mat(mat = mat_filter, min_read_per_site = min_read_per_site, min_site_per_read =  min_site_per_read)
+  }else{
+    mat_filter
+  }
+}
+
+```
+
+### 2. perform correlation analysis
+
+The correlation analysis only focused on sites with high editing ratio
+
+1) coverage >= 20
+2) editing ratio >= 0.1
+3) editing reads >= 2
+
+#### 2.1. Jaccard method
+
+```{r}
+jaccard.test.mat <- function(mat, pval = FALSE, na.rm = TRUE){
+  mat <- as.matrix(mat)
+  mat <- ifelse(mat >= 0.5, 1, 0)
+  #---get editing sites
+  editing_sites <- as.numeric(colnames(mat))
+  names(editing_sites) <- 1:length(editing_sites)
+  #---get site pairs
+  editing_sites_pair <- combn(x = editing_sites, m = 2, FUN = function(x){x}, simplify = FALSE)
+  editing_sites_cor <- purrr::map_df(.x = editing_sites_pair,
+                                     .f = function(x, mat, pval, na.rm){
+                                       site_mat <- mat[,as.character(x)]
+                                       na_num <- apply(X = site_mat, MARGIN = 1, FUN = function(x){length(x[is.na(x)])})
+                                       if(na.rm){
+                                         site_mat <- na.omit(site_mat)
+                                       }else{
+                                         site_mat <- site_mat[na_num < 2,]
+                                         site_mat[is.na(site_mat)] <- 0
+                                       }
+                                       #--- get site number
+                                       site_tab <- as.data.frame(site_mat)
+                                       site_tab[[1]] <- factor( site_tab[[1]],levels = c(0,1))
+                                       site_tab[[2]] <- factor(site_tab[[2]],levels = c(0,1))
+                                       site_tab <- table(site_tab)
+                                       
+                                       if(pval){
+                                         test_res <- suppressMessages(jaccard::jaccard.test(x = site_mat[,1,drop=T], y = site_mat[,2,drop=T], method = 'bootstrap')) 
+                                         data.frame(site1 = x[1], site2 = x[2], dist = x[2]-x[1],
+                                                    site_00 = site_tab[1,1],site_10 = site_tab[2,1],
+                                                    site_01 = site_tab[1,2],site_11 = site_tab[2,2],
+                                                    statistics = test_res$statistics, p.value = test_res$pvalue)
+                                       }else{
+                                         test_res <- jaccard::jaccard(x = site_mat[,1,drop=T], y = site_mat[,2,drop=T])
+                                         data.frame(site1 = x[1], site2 = x[2], dist = x[2]-x[1], 
+                                                    site_00 = site_tab[1,1],site_10 = site_tab[2,1],
+                                                    site_01 = site_tab[1,2],site_11 = site_tab[2,2],
+                                                    statistics = test_res)
+                                       }
+                                       
+                                     },mat=mat, pval = pval, na.rm=na.rm)
+  editing_sites_cor
+}
+```
+
+#### 2.2 jaccard correaltion
+
+```{r}
+library(tidyverse)
+library(furrr)
+in_path <- "../01.filtered_mat"
+get_jaccard_cor <- function(samp, 
+                            min_site = 2,
+                            min_read = 20,
+                            indir = in_path, 
+                            outdir = out_path,
+                            ncores=1){
+  mat_list <- readRDS(file.path(indir,paste(samp,'_directRNA_filtered_read_by_site_mat.rds',sep='')))
+  #trim mat
+  mat_list <- lapply(X = mat_list, FUN = trim_mat, min_read_num = min_read, min_site_num = min_site)
+  site_num <- sapply(mat_list, FUN = function(x){
+    ifelse(is.null(x),0,ncol(x))
+  })
+  mat_list <- mat_list[site_num>=2]
+  future::plan(multicore, workers = ncores)
+  out_list <- furrr::future_map(.x = mat_list, .f = jaccard.test.mat,.options = furrr::furrr_options(),.progress = TRUE)
+  out_list <- dplyr::bind_rows(out_list,.id = 'transcript_id')
+  write_delim(x = out_list, file = file.path(outdir,paste(samp,'_directRNA_filtered_site_correlation_tab_trimmed_0.5_percent.tsv.gz',sep='')),delim = '\t')
+  out_list
+}
+
+out_path <- "../02.jaccard_correlation_trimmed_0.5"
+dir.create(out_path)
+samples <- c('H1-hESC', 'H1-DE', 'H1-PE', 'H1-PGC', 'H9-hESC', 'H9-DE', 'H9-PE')
+all_res <- pbapply::pblapply(X = samples,FUN = get_jaccard_cor, ncores = 14)
+names(all_res) <- samples         
+site_pair_cor_tab <- dplyr::bind_rows(all_res,.id = 'stage')
+site_pair_cor_tab$dist_range <- cut(site_pair_cor_tab$dist, breaks = c(0,50,200,500,1000,1000000), 
+                labels = c('0-50 bp','50-200 bp','200-500 bp','500-1000 bp','>1000 bp'))
+#AFG_H9_site_pair_tab$dist_range <- cut(AFG_H9_site_pair_tab$dist, breaks = c(0,100,300,600,1000,1000000), labels = c('0-100bp','100-300bp','300-600bp','600-1000bp','>1000bp'))
+site_pair_cor_tab$stage <- factor(site_pair_cor_tab$stage,levels = samples)
+#dir.create('../03.correlation_analysis')
+data.table::fwrite(x = site_pair_cor_tab, file = '../03.correlation_analysis/all_site_pair_jaccard_correlation_by_gene_isoform_per_sample_cutoff_0.5.tsv.gz',sep = '\t')
+
+```
+
+### 3.correlation downstream analysis
+
+#### 3.1 Visualization of the correlation between paired sites 
+
+```{r}
+library(tidyverse)
+library(data.table)
+site_pair_cor_tab <- read_tsv(file =  '../03.correlation_analysis/all_site_pair_jaccard_correlation_by_gene_isoform_per_sample.tsv.gz',col_names = TRUE, show_col_types = FALSE)
+library(ggplot2)
+library(tidyplot)
+library(ggridges)
+plot_frm <- site_pair_cor_tab
+
+#---1. density plot
+colors <-  adjust.color.number(color = material.color.set(name = 'Developmental.basic', brightness = 3), n = length(levels(plot_frm$dist_range)))
+
+p <- ggplot(data = plot_frm, mapping = aes(x = statistics, y = dist_range, fill = dist_range))+
+  geom_density_ridges_gradient(scale = 1.4, panel_scaling = F, alpha=.8,na.rm=T, color=NA)+
+  scale_color_manual(values = colors)+
+  scale_fill_manual(values = rev(colors))+
+  scale_x_continuous(limits = c(0,1))+
+  theme_clean()+
+  facet_wrap(.~stage,nrow=2, scales = 'free_x')
+p
+ggsave(filename = "../03.correlation_analysis/Figures/Jaccard_correlation_with_distance_all_stage.pdf",plot = p, device = 'pdf',width = 8,height = 4,units = 'in')
+
+
+#---Total number of pairs.
+
+library(tidyverse)
+plot_num <- table(plot_frm$stage,plot_frm$dist_range) %>% as.data.frame()
+colnames(plot_num) <- c('stage','dist_range','number')
+
+p <- ggplot(data = plot_num, mapping = aes(x = stage, y=number,fill = dist_range))+
+  geom_bar(stat = 'identity', position = 'fill',color=NA)+
+#  coord_polar(theta = "y")+
+  theme_void()+
+  scale_fill_manual(values = rev(colors))+
+  facet_wrap(.~stage,nrow=2)
+p
+
+
+
+#---3. density plot with point
+plot_frm_h1_hESC <- plot_frm |> filter(stage=='H1-hESC')
+
+p <- ggplot(data = plot_frm_h1_hESC, mapping = aes(x = statistics, y = dist))+
+  stat_density_2d(geom = "raster", aes(fill = after_stat(density)),contour = FALSE) + 
+  scale_fill_viridis_c()+
+  scale_y_log10()+
+  #geom_density_ridges_gradient(size = 1, scale = 1.4, panel_scaling = F, alpha=.8,na.rm=T, color=NA)+
+#  scale_color_manual(values = material.color.set(name = 'Developmental.basic', brightness = 5))+
+#  scale_fill_manual(values = (material.color.set(name = 'Developmental.basic', brightness = 3)))+
+  theme_basic()+
+  facet_wrap(.~dist_range,nrow=3)
+p
+
+ggsave(filename = "../03.correlation_analysis/Figures/Jaccard_correlation_with_distance_point.pdf",plot = p, device = 'pdf',width = 4,height = 3,units = 'in')
+
+#---4. Cumulative plot with point
+p <- ggplot(data = plot_frm, mapping = aes(x = statistics,  color = dist_range))+
+  stat_ecdf(na.rm = T)+
+  scale_color_manual(values = material.color.set(name = 'Developmental.basic', brightness = 5))+
+  scale_fill_manual(values = rev(material.color.set(name = 'Developmental.basic', brightness = 3)))+
+  theme_clean()+
+  facet_wrap(.~stage,nrow=2)
+p
+ggsave(filename = "../03.correlation_analysis/Figures/Jaccard_correlation_ecdf_with_distance.pdf",plot = p, device = 'pdf',width = 6,height = 3,units = 'in')
+
+```

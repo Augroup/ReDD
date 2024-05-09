@@ -1,0 +1,414 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+#### 2a
+
+```{r}
+library(tidyverse)
+editing_ratio <- read_tsv(file = './2a_MAE/site_ratio.tsv',show_col_types = F)
+editing_ratio$bins <- cut(editing_ratio$truth, breaks = 5, labels = c('(0,0.2]','(0.2,0.4]','(0.4,0.6]','(0.6,0.8]','(0.8,1]'))
+#get diff ratio
+editing_diff_ratio <- editing_ratio |> mutate(ReDD = ReDD-truth, Dinopore = Dinopore-truth, DeepEdit = DeepEdit-truth)
+editing_ratio_tab <- editing_diff_ratio |> select(-2) |> pivot_longer(cols = c('ReDD', 'Dinopore', 'DeepEdit'),names_to = 'Tools',values_to = 'Diff_Editing_ratio')
+
+plot_frm <- editing_ratio_tab
+plot_frm$Tools <- factor(x = plot_frm$Tools, levels = c('ReDD', 'Dinopore', 'DeepEdit'))
+
+
+#--- boxplot
+library(ggplot2)
+library(tidyplot)
+p1 <- ggplot(data = plot_frm, mapping = aes(x = bins,y = Diff_Editing_ratio))+
+  geom_hline(yintercept = 0)+
+  geom_boxplot(aes(fill = Tools), outlier.shape = NA, position = position_dodge(width = 0.7),color='black',width=0.5)+
+#  geom_violin(aes(color = Tools), outlier.shape = NA, position = position_dodge(width = 0.8),fill=NA,width=0.8)+
+#  geom_point(mapping = aes(group = Tools),position = position_dodge(width = 0.8),color='black',shape=16, size=.2)+
+#  geom_jitter(color='black',shape=16, size=.2)+
+  stat_summary(mapping = aes(group=Tools, color=Tools), geom = 'line',fun = median, position = position_dodge(width = 0.7))+
+  scale_fill_manual(values = c('#ffb74d','#64b5f6','#81c784'))+
+  scale_color_manual(values = c('#ef6c00','#1565c0','#2e7d32'))+
+  theme_basic()
+  
+p1
+
+
+#---barplot
+site_per_bin <- table(editing_ratio$bins) |> as.data.frame()
+
+p2 <- ggplot(data = editing_ratio, mapping = aes(x = bins))+
+  geom_bar(color='gray',width = .8)+
+  theme_basic()
+
+p2
+
+p <- cowplot::plot_grid(p1,p2,nrow = 2)
+ggsave(filename = "./2a_MAE/boxplot.pdf", plot = p, device = 'pdf',width = 3,height = 5,units = 'in')
+
+```
+
+#### 2b
+
+```{r}
+library(tidyverse)
+igv_data <- read_tsv(file = './2b/IGV.tsv',show_col_types = F)
+
+igv_data_ratio <- igv_data |> select(Site, truth_ratio, ReDD_ratio, Dinopore_ratio, DeepEdit_ratio) |> pivot_longer(cols = ends_with('ratio'),names_to = 'Tools', values_to = 'Ratio')
+igv_data_ratio$Loc <- as.numeric(sapply(strsplit(igv_data_ratio$Site,split = '-'),function(x){x[2]}))
+igv_data_ratio$Tools <- factor(str_replace(igv_data_ratio$Tools, pattern = '_ratio',replacement = ''), levels = c('truth','ReDD', 'Dinopore', 'DeepEdit'))
+
+plot_frm <- igv_data_ratio
+#--- barplot
+library(ggplot2)
+library(tidyplot)
+p1 <- ggplot(data = plot_frm, mapping = aes(x = Loc, y = Ratio))+
+  geom_segment(mapping = aes(x = Loc, xend = Loc, y=0, yend = Ratio, color=Tools),linewidth = 0.5)+
+  scale_x_continuous(breaks = c(136334873,136335628,136335709),labels = c(136334873,136335628,136335709))+
+  scale_y_continuous(limits = c(0,1),breaks = c(0.0,0.5,1.0))+
+  scale_fill_manual(values = c('#ba68c8','#ffb74d','#64b5f6','#81c784'))+
+  scale_color_manual(values = c('#6a1b9a','#ef6c00','#1565c0','#2e7d32'))+
+  theme_clean()+
+  facet_wrap(.~Tools,ncol=1)
+  
+p1
+ggsave(filename = "./2b/barplot.pdf", plot = p1, device = 'pdf',width = 3,height = 3,units = 'in')
+
+```
+
+#### 2c
+
+```{r}
+library(tidyverse)
+ko_data <- read_tsv(file = './2c/site_ratio.tsv',show_col_types = F)
+ko_data$bins <- cut(ko_data$truth, breaks = 5, labels = c('(0,0.2]','(0.2,0.4]','(0.4,0.6]','(0.6,0.8]','(0.8,1]'))
+
+ko_data_tab <- ko_data |> pivot_longer(cols = c('ReDD_WT', 'ReDD_DKO'), names_to = 'Sample', values_to = 'ratio')
+
+
+plot_frm <- ko_data_tab
+plot_frm$Sample <- factor(x = plot_frm$Sample, levels = c('ReDD_WT', 'ReDD_DKO'))
+#--- boxplot
+library(ggplot2)
+library(tidyplot)
+#p1 <- ggplot(data = plot_frm, mapping = aes(x = bins, y = ratio, fill = Sample))+
+#  geom_bar(stat = 'identity', position = position_dodge(width = 0.7), width = 0.6, color='black')+
+#  geom_dotplot(binaxis = "y", binwidth = 0.0001, stackdir = 'center',position = position_dodge(width = 0.7), width = .6)+
+#  geom_errorbar(mapping =aes(ymin=mean-sd,ymax=mean+sd), position = position_dodge(width = 1) )+
+#  stat_summary(mapping = aes(group=Tools, color=Tools), geom = 'bar',fun = mean, position = position_dodge(width = 0.7))+
+#  scale_y_continuous(limits = c(0,1),breaks = seq(0,1,by=.25))+
+#  scale_fill_manual(values = c('#ffb74d','#64b5f6','#81c784'))+
+#  scale_color_manual(values = c('#ef6c00','#1565c0','#2e7d32'))+
+#  theme_basic()
+  
+#p1
+
+plot_mean <- plot_frm |> group_by(bins,Sample) |> summarise(mean = mean(ratio), sd = sd(ratio))
+
+#--- boxplot
+library(ggplot2)
+library(tidyplot)
+p1 <- ggplot(data = plot_mean, mapping = aes(x = bins, y = mean, fill = Sample))+
+  geom_bar(stat = 'identity', position = position_dodge(width = 0.7), width = 0.6, color='black')+
+  geom_errorbar(mapping =aes(ymin=mean,ymax=mean+sd), position = position_dodge(width = 0.7), width=0.2)+
+#  stat_summary(mapping = aes(group=Tools, color=Tools), geom = 'bar',fun = mean, position = position_dodge(width = 0.7))+
+  scale_y_continuous(limits = c(0,1),breaks = seq(0,1,by=.25))+
+  scale_fill_manual(values = c('#aed581','#bdbdbd'))+
+  theme_basic()
+  
+p1
+ggsave(filename = "./2c/barplot.pdf", plot = p1, device = 'pdf',width = 3,height = 2,units = 'in')
+
+
+```
+
+#### 2d
+
+```{r}
+library(tidyverse)
+IGV_plot <- read_tsv(file = './2d/IGV.tsv',show_col_types = F)
+
+igv_data_ratio <- IGV_plot |> select(Site, truth_ratio, ReDD_WT_ratio, ReDD_DKO_ratio) |> pivot_longer(cols = ends_with('ratio'),names_to = 'Samples', values_to = 'Ratio')
+igv_data_ratio$Loc <- as.numeric(sapply(strsplit(igv_data_ratio$Site,split = '-'),function(x){x[2]}))
+igv_data_ratio$Samples <- factor(str_replace(igv_data_ratio$Samples, pattern = '_ratio',replacement = ''), levels = c('truth','ReDD_WT', 'ReDD_DKO'))
+igv_data_ratio$Ratio <- ifelse(igv_data_ratio$Ratio<0.051,0,igv_data_ratio$Ratio)
+
+
+plot_frm <- igv_data_ratio
+#--- barplot
+library(ggplot2)
+library(tidyplot)
+p1 <- ggplot(data = plot_frm, mapping = aes(x = Loc, y = Ratio))+
+  geom_segment(mapping = aes(x = Loc, xend = Loc, y=0, yend = Ratio, color=Samples),linewidth = 0.5)+
+  scale_x_continuous(breaks = c(31431089,31431240,31431242),labels = c(31431089,31431240,31431242))+
+  scale_y_continuous(limits = c(0,1),breaks = c(0.0,0.5,1.0))+
+  scale_fill_manual(values = c('#ba68c8','#aed581','#bdbdbd'))+
+  scale_color_manual(values = c('#6a1b9a','#558b2f','#424242'))+
+  theme_clean()+
+  facet_wrap(.~Samples,ncol=1)
+  
+p1
+ggsave(filename = "./2d/barplot.pdf", plot = p1, device = 'pdf',width = 3,height = 3,units = 'in')
+
+
+```
+
+
+
+
+#### 2e
+
+```{r}
+library(tidyverse)
+HCT116_data <- read_tsv('./2e/HCT116_site_ratio.tsv',show_col_types = F)
+HCT116_data$Samples <- rep('HCT116',nrow(HCT116_data))
+HEK293T_data <- read_tsv('./2e/HEK293T_independent_sample_site_ratio.tsv',show_col_types = F)
+HEK293T_data$Samples <- rep('HEK293T',nrow(HEK293T_data))
+boxplot_data <- rbind(HCT116_data, HEK293T_data)
+
+boxplot_data$bins <- cut(boxplot_data$truth, breaks = 5, labels = c('(0,0.2]','(0.2,0.4]','(0.4,0.6]','(0.6,0.8]','(0.8,1]'))
+boxplot_data$Diff_Editing_ratio <- boxplot_data$ReDD-boxplot_data$truth
+boxplot_data$Samples <- factor(boxplot_data$Samples,levels = c('HEK293T', 'HCT116'))
+
+plot_frm <- boxplot_data
+
+
+#--- boxplot
+library(ggplot2)
+library(tidyplot)
+p1 <- ggplot(data = plot_frm, mapping = aes(x = bins,y = Diff_Editing_ratio))+
+  geom_hline(yintercept = 0)+
+  geom_boxplot(aes(fill = Samples), outlier.shape = NA, position = position_dodge(width = 0.7),color='black',width=0.5)+
+#  geom_violin(aes(color = Tools), outlier.shape = NA, position = position_dodge(width = 0.8),fill=NA,width=0.8)+
+#  geom_point(mapping = aes(group = Tools),position = position_dodge(width = 0.8),color='black',shape=16, size=.2)+
+#  geom_jitter(color='black',shape=16, size=.2)+
+  stat_summary(mapping = aes(group=Samples, color=Samples), geom = 'line',fun = median, position = position_dodge(width = 0.7))+
+  scale_fill_manual(values = c('#aed581','#ffb74d'))+
+  scale_color_manual(values = c('#558b2f','#ef6c00'))+
+  theme_basic()
+  
+p1
+
+
+#---barplot
+site_per_bin <- table(boxplot_data$bins,boxplot_data$Samples) |> as.data.frame()
+colnames(site_per_bin) <- c('bins','Samples','Num')
+
+p2 <- ggplot(data = site_per_bin, mapping = aes(x = bins, y = Num, fill=Samples))+
+  geom_bar(stat = 'identity',width = .7,position = position_dodge(0.7))+
+  scale_fill_manual(values = c('#aed581','#ffb74d'))+
+  theme_basic()
+
+p2
+
+p <- cowplot::plot_grid(p1,p2,nrow = 2)
+ggsave(filename = "./2e/boxplot.pdf", plot = p, device = 'pdf',width = 3,height = 5,units = 'in')
+
+
+```
+
+
+#### 2f
+
+```{r}
+library(tidyverse)
+#---ROC
+
+ROC_dir <- "./3a/ROC/"
+ROC_data <- list.files(ROC_dir)
+
+ROC_list <- lapply(ROC_data,function(x,ROC_dir){
+  read_tsv(file.path(ROC_dir,x),show_col_types = F)
+},ROC_dir=ROC_dir)
+names(ROC_list) <- ROC_data
+
+ROC_list_tbl <- data.table::rbindlist(l = ROC_list,idcol = 'Tools')
+
+ROC_list_tbl$Tools <- factor(str_replace(ROC_list_tbl$Tools, pattern = '.tsv',replacement = ''), levels = c('ReDD', 'Dinopore', 'DeepEdit'))
+
+plot_frm <- ROC_list_tbl
+#--- barplot
+library(ggplot2)
+library(tidyplot)
+p1 <- ggplot(data = plot_frm, mapping = aes(x = FPR, y = TPR, color=Tools))+
+  geom_line()+
+  geom_vline(xintercept = 0.05, linetype='dashed')+
+  scale_fill_manual(values = c('#ffb74d','#64b5f6','#81c784'))+
+  scale_color_manual(values = c('#ef6c00','#1565c0','#2e7d32'))+
+  theme_basic()
+  
+p1
+
+#---PR
+
+PR_dir <- "./3a/PR/"
+PR_data <- list.files(PR_dir)
+
+PR_list <- lapply(PR_data,function(x,PR_dir){
+  read_tsv(file.path(PR_dir,x),show_col_types = F)
+},PR_dir=PR_dir)
+names(PR_list) <- PR_data
+
+PR_list_tbl <- data.table::rbindlist(l = PR_list,idcol = 'Tools')
+
+PR_list_tbl$Tools <- factor(str_replace(PR_list_tbl$Tools, pattern = '.tsv',replacement = ''), levels = c('ReDD', 'Dinopore', 'DeepEdit'))
+
+plot_frm <- PR_list_tbl
+#--- barplot
+library(ggplot2)
+library(tidyplot)
+p2 <- ggplot(data = plot_frm, mapping = aes(x = Recall, y = Precision, color=Tools))+
+  geom_line()+
+  geom_hline(yintercept = 0.95, linetype='dashed')+
+  scale_x_continuous(limits = c(0,1))+
+  scale_y_continuous(limits = c(0,1))+
+  scale_fill_manual(values = c('#ffb74d','#64b5f6','#81c784'))+
+  scale_color_manual(values = c('#ef6c00','#1565c0','#2e7d32'))+
+  theme_basic()
+  
+p2
+
+
+p <- cowplot::plot_grid(p1,p2)
+ggsave(filename = "./3a/ROC_PR_curve.pdf", plot = p, device = 'pdf',width = 8,height = 3,units = 'in')
+```
+
+
+#### 2g
+
+```{r}
+library(tidyverse)
+ROC_dir <- "./3b/ROC/"
+ROC_data <- list.files(ROC_dir)
+
+ROC_list <- lapply(ROC_data,function(x,ROC_dir){
+  read_tsv(file.path(ROC_dir,x),show_col_types = F)
+},ROC_dir=ROC_dir)
+names(ROC_list) <- ROC_data
+
+ROC_list_tbl <- data.table::rbindlist(l = ROC_list,idcol = 'Samples')
+
+ROC_list_tbl$Samples <- factor(str_replace(ROC_list_tbl$Samples, pattern = '.tsv',replacement = ''), levels = c('HEK293T_independent_sample', 'HCT116'))
+
+plot_frm <- ROC_list_tbl
+#--- barplot
+library(ggplot2)
+library(tidyplot)
+p1 <- ggplot(data = plot_frm, mapping = aes(x = FPR, y = TPR, color=Samples))+
+  geom_line()+
+  geom_vline(xintercept = 0.05, linetype='dashed')+
+  scale_fill_manual(values = c('#64b5f6','#ffb74d'))+
+  scale_color_manual(values = c('#1565c0','#ef6c00'))+
+  theme_basic()
+  
+p1
+
+#---PR
+
+PR_dir <- "./3b/PR/"
+PR_data <- list.files(PR_dir)
+
+PR_list <- lapply(PR_data,function(x,PR_dir){
+  read_tsv(file.path(PR_dir,x),show_col_types = F)
+},PR_dir=PR_dir)
+names(PR_list) <- PR_data
+
+PR_list_tbl <- data.table::rbindlist(l = PR_list,idcol = 'Samples')
+
+PR_list_tbl$Samples <- factor(str_replace(PR_list_tbl$Samples, pattern = '.tsv',replacement = ''), levels = c('HEK293T_independent_sample', 'HCT116'))
+
+plot_frm <- PR_list_tbl
+#--- barplot
+library(ggplot2)
+library(tidyplot)
+p2 <- ggplot(data = plot_frm, mapping = aes(x = Recall, y = Precision, color=Samples))+
+  geom_line()+
+  geom_hline(yintercept = 0.95, linetype='dashed')+
+  scale_x_continuous(limits = c(0,1))+
+  scale_y_continuous(limits = c(0,1))+
+  scale_fill_manual(values = c('#64b5f6','#ffb74d'))+
+  scale_color_manual(values = c('#1565c0','#ef6c00'))+
+  theme_basic()
+  
+p2
+
+
+p <- cowplot::plot_grid(p1,p2)
+ggsave(filename = "./3b/ROC_PR_curve.pdf", plot = p, device = 'pdf',width = 8,height = 3,units = 'in')
+```
+
+#### 2i
+
+```{r}
+library(tidyverse)
+
+site_level_metrics <- read_tsv('./3d/site_level_metrics.tsv',show_col_types = F)
+quantification_metrics <- read_tsv('./3d/quantification_metrics.tsv',show_col_types = F)
+
+site_level_metrics <- left_join(x = site_level_metrics, y = quantification_metrics, by = 'Model')
+
+site_level_metrics_tbl <- site_level_metrics |> pivot_longer(cols = 2:9,names_to = 'Metrics', values_to = 'Value')
+
+plot_frm <- site_level_metrics_tbl
+
+plot_frm <- site_level_metrics_tbl |> filter(Metrics %in% c('MAE','F1-score','Accuracy'))
+plot_frm$Model <- factor(plot_frm$Model, levels = c(unique(plot_frm$Model)))
+
+plot_frm1 <- plot_frm |> filter(Metrics %in% c('Accuracy'))
+#--- barplot
+library(ggplot2)
+library(tidyplot)
+p1 <- ggplot(data = plot_frm1, mapping = aes(x = Model, y = Value, group = Metrics))+
+#  geom_bar(stat = 'identity',width=.5)+
+  geom_point(shape=16)+
+  geom_line()+
+  theme_basic()+
+  scale_y_continuous(limits = c(0.7,0.811),breaks=c(0.7,0.8))
+
+p1
+
+plot_frm2 <- plot_frm |> filter(Metrics %in% c('F1-score'))
+#--- barplot
+library(ggplot2)
+library(tidyplot)
+p2 <- ggplot(data = plot_frm2, mapping = aes(x = Model, y = Value, group = Metrics))+
+#  geom_bar(stat = 'identity',width=.5)+
+  geom_point(shape=16)+
+  geom_line()+
+  theme_basic()+
+  scale_y_continuous(limits = c(0.6,0.8),breaks=c(0.6,0.8))
+
+p2
+
+plot_frm3 <- plot_frm |> filter(Metrics %in% c('MAE'))
+#--- barplot
+library(ggplot2)
+library(tidyplot)
+p3 <- ggplot(data = plot_frm3, mapping = aes(x = Model, y = Value, group = Metrics))+
+#  geom_bar(stat = 'identity',width=.5)+
+  geom_point(shape=16)+
+  geom_line()+
+  theme_basic()+
+  scale_y_continuous(limits = c(0,0.3),breaks=c(0,0.3))
+
+p3
+
+p <- cowplot::plot_grid(p1,p2,p3,ncol = 1)
+
+ggsave(filename = "./3d/Metrics_line.pdf", plot = p, device = 'pdf',width = 3,height = 3,units = 'in')
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
