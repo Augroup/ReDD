@@ -1,9 +1,10 @@
 # ReDD: **R**NA **e**diting detection by **D**irect RNA sequencing and **D**eep learning
 * ReDD: **R**NA **e**diting detection by **D**irect RNA sequencing and **D**eep learning
-* We also provides [Argo-ReDD](https://redd-portal.me): a **cloud-based platform** to run ReDD online without the need to prepare a computing environment.
+* [Argo-ReDD](https://redd-portal.me): a **cloud-based platform** to run ReDD online without the need to prepare a computing environment.
 * This repository contains code and tutorials to run ReDD.
 * The code to reproduce figures and results in the manuscript is deposited in `reproduce_scripts` folder.
 ## Getting started
+**Besides running ReDD locally, we also provides [Argo-ReDD](https://redd-portal.me): a **cloud-based platform** to run ReDD online without the need to prepare a computing environment.**
 #### Download and Installation
 The following comand and pipeline has been tested in the following Linux systems:
 * Red Hat Enterprise Linux Server release 7.9 (Maipo)
