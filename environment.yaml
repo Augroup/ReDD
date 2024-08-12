@@ -28,3 +28,4 @@ dependencies:
   - bioawk=1.0
   - perl=5.32.1
   - gawk=5.1.0
+  - smart_open=3.0
