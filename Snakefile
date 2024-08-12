@@ -3,7 +3,7 @@ scattergather:
 
 num_split = workflow._scatter['split']
 configfile: "config.yaml"
-ruleorder: merge_fastq > multiline_fastq_to_four_lines > split_fastq > NanoFilt > U2T
+ruleorder: merge_fastq > multiline_fastq_to_four_lines > split_fastq > NanoFilt > U2T > minimap2 > minimap2_genome > filter_sam > samtools_sort > samtools_index
 rule merge_fastq:
     input:
         config['input_fastq_folder']
