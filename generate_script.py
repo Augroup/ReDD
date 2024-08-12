@@ -218,8 +218,8 @@ mkdir {output_folder}/intermediates/fastq/
 mkdir {output_folder}/intermediates/fast5/
 mkdir {output_folder}/intermediates/reference/
 # link reference
-ln -s {ref_transcriptome_file} {output_folder}/intermediates/reference/{output_name}.transcriptome.fa
-ln -s {ref_genome_file} {output_folder}/intermediates/reference/{output_name}.genome.fa
+ln -s {ref_transcriptome_file} {output_folder}/intermediates/reference/transcriptome.fa
+ln -s {ref_genome_file} {output_folder}/intermediates/reference/genome.fa
 
 # link script
 ln -s {snakefile_path}/scripts scripts
