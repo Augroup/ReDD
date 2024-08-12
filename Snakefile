@@ -333,8 +333,8 @@ checkpoint generate_site_level_results:
 if config['reference'] == 'transcriptome':
     rule create_cdna2genome_bed:
         input:
-            annotation_gpd="intermediates/reference/gencode.v31.annotation.gpd",
-            # annotation_gpd=config['ref_annotation_file']
+            #annotation_gpd="intermediates/reference/gencode.v31.annotation.gpd",
+            annotation_gpd=config['ref_annotation_file']
         output:
             cdna2genome_tab="intermediates/reference/gencode.v31.annotation.cdna2genome.tab",
         resources:
@@ -449,8 +449,8 @@ if config['reference'] == 'genome':
             site_tab="outputs/"+"{sample}"+".flt.genome.tab",
             mole_level_bed="outputs/"+"{sample}"+".prediction.genome.txt",
             ref = "intermediates/reference/genome.fa",
-            candidate_sites = "intermediates/reference/{sample}.candidate_sites.tab",
-            annotation_gpd="intermediates/reference/gencode.v31.annotation.gpd",
+            candidate_sites = config['ref_candidate_sites_file'],
+            annotation_gpd=config['ref_annotation_file'],
             sorted_bam = "igv/{sample}.genome.sorted.bam",
             sorted_bam_bai = "igv/{sample}.genome.sorted.bam.bai"
         params:
@@ -469,8 +469,8 @@ elif config['reference'] == 'transcriptome':
             site_tab="outputs/"+"{sample}"+".flt.genome.tab",
             mole_level_bed="outputs/"+"{sample}"+".prediction.transcriptome.txt",
             ref = "intermediates/reference/genome.fa",
-            annotation_gpd="intermediates/reference/gencode.v31.annotation.gpd",
-            candidate_sites = "intermediates/reference/{sample}.candidate_sites.tab",
+            annotation_gpd=config['ref_annotation_file'],
+            candidate_sites = config['ref_candidate_sites_file'],
             cdna_site_tab = "outputs/{sample}.flt.transcriptome.tab",
             sorted_bam = "igv/{sample}.genome.sorted.bam",
             sorted_bam_bai = "igv/{sample}.genome.sorted.bam.bai"
