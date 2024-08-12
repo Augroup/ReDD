@@ -489,19 +489,3 @@ elif config['reference'] == 'transcriptome':
             sort -S 80% -k 3,3 -k 2,2 {input.mole_level_bed} > {output.sorted_mole_level_bed}
             python scripts/prep_visualization.py --annotation {input.annotation_gpd} --trans_site_level_bed {input.cdna_site_tab} --candidate_sites {input.candidate_sites} --site_level_bed {input.site_tab} --mole_level_bed {output.sorted_mole_level_bed} --reference_type {params.reference_type} -ref {input.ref} -o {output.output_dir} -t {threads}  --isoform_read_count {params.isoform_read_count}
             """
- checkpoint plot_heatmap:
-        input:
-            site_tab="outputs/{sample}.site.bed",
-            mole_level_bed="outputs/"+"{sample}"+".prediction.transcriptome.txt"
-        output:
-            site_tab="outputs/{sample}.heatmap.site.bed"
-            output_dir = directory("outputs/heatmap/"+"{sample}"+"/")
-        threads: 1
-        resources:
-            runtime= 3 * 60,
-            mem_mb=  10 * 18 * 1024
-        shell:
-            """ 
-            sed -r 's/\s+\S+$//' {input.site_tab} > {output.site_tab}
-            Rscript --vanilla scripts/plot_heatmap.R -s {input.mole_level_bed} -b {output.site_tab} -o {output.output_dir}
-            """
