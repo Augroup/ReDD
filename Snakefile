@@ -16,7 +16,7 @@ rule merge_fastq:
         runtime= 30,
         mem_mb= 100,
     shell:
-        "cat {input}/* > {output}"
+        "cat {input}/*.fastq {input}/*.fq > {output}"
 
 rule multiline_fastq_to_four_lines:
     input:
