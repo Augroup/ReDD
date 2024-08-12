@@ -5,8 +5,7 @@ num_split = workflow._scatter['split']
 configfile: "config.yaml"
 rule merge_fastq:
     input:
-        "intermediates/fastq/{sample}/"
-        # config['input_fastq_folder']
+        config['input_fastq_folder']
     output:
         "intermediates/fastq/{sample}.fastq"
     # group: 
@@ -190,8 +189,8 @@ rule samtools_index:
         "samtools index -@ {threads} {input}"
 rule nanopolish_index:
     input:
-        fast5_dir = "intermediates/fast5/{sample}/",
-        # fast5_dir = config['input_fast5_folder'],
+        #fast5_dir = "intermediates/fast5/{sample}/",
+        fast5_dir = config['input_fast5_folder'],
         fastq = "intermediates/splitted/{sample}_{scatteritem}.U2T.fastq"
     output:
        "intermediates/splitted/{sample}_{scatteritem}.U2T.fastq.index"
@@ -232,8 +231,8 @@ checkpoint extract_signals:
     input:
         ref_genome = "intermediates/reference/genome.fa",
         ref_transcriptome =  "intermediates/reference/transcriptome.fa",
-        summary = "intermediates/summary/{sample}_summary.txt",
-        # summary = config['input_summary_file'],
+        #summary = "intermediates/summary/{sample}_summary.txt",
+        summary = config['input_summary_file'],
         bam = "intermediates/mapped_reads/{sample}_{scatteritem}.sorted.bam",
         event = "intermediates/eventalign/{sample}_{scatteritem}_eventalign.txt",
         # candidate=get_candidate_name
@@ -390,16 +389,16 @@ elif config['reference'] == 'transcriptome':
 checkpoint site_filtering: #we need parameters to select from genome and cdna
     input:
         site_bed="outputs/"+"{sample}"+".site.bed",
-        alu_bed="intermediates/reference/Hg38_Alu.merge.bed",
-        # alu_bed=config['ref_alu_file'],
-        snp_bed="intermediates/reference/hg38_snp151.bed",
-        # snp_bed=config['ref_snp_file'],
+        #alu_bed="intermediates/reference/Hg38_Alu.merge.bed",
+        alu_bed=config['ref_alu_file'],
+        #snp_bed="intermediates/reference/hg38_snp151.bed",
+        snp_bed=config['ref_snp_file'],
         m6A_motif_bed="intermediates/reference/analysis_extract_m6A_motif.bed",
-        REDI_txt="intermediates/reference/REDIportal_hg38.txt",
-        # REDI_txt=config['ref_REDIportal_file'],
+        #REDI_txt="intermediates/reference/REDIportal_hg38.txt",
+        REDI_txt=config['ref_REDIportal_file'],
         cdna2genome_tab="intermediates/reference/gencode.v31.annotation.cdna2genome.tab",
-        annotation_gpd="intermediates/reference/gencode.v31.annotation.gpd"
-        # annotation_gpd=config['ref_annotation_file']
+        #annotation_gpd="intermediates/reference/gencode.v31.annotation.gpd"
+        annotation_gpd=config['ref_annotation_file']
     output:
         temp_bed_1="outputs/"+"{sample}"+"-1.bed",
         temp_bed_2="outputs/"+"{sample}"+"-2.bed",
