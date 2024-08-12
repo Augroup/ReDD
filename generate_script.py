@@ -220,9 +220,10 @@ mkdir {output_folder}/intermediates/reference/
 # link reference
 ln -s {ref_transcriptome_file} {output_folder}/intermediates/reference/transcriptome.fa
 ln -s {ref_genome_file} {output_folder}/intermediates/reference/genome.fa
-
+ln -s {input_fastq_folder} {output_folder}/intermediates/fastq/{output_name}
+ln -s {input_fast5_folder} {output_folder}/intermediates/fast5/{output_name}
 # link script
-ln -s {snakefile_path}/scripts scripts
+cp {snakefile_path}/scripts -r scripts
 cp {snakefile_path}/Snakefile Snakefile
 snakemake --unlock
 snakemake -p outputs/precomputed_visualization/{output_name} --rulegraph | dot -Tpdf > dag.pdf
