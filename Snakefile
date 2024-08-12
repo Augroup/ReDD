@@ -16,7 +16,7 @@ rule merge_fastq:
         runtime= 30,
         mem_mb= 100,
     shell:
-        "find {input} -name "*.fastq" -o -name "*.fq" -type f | xargs cat > {output}"
+        "find {input} -name *.fastq -o -name *.fq -type f | xargs cat > {output}"
 
 rule multiline_fastq_to_four_lines:
     input:
