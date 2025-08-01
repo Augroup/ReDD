@@ -2,6 +2,24 @@ from pathlib import Path
 import multiprocessing as mp
 import time
 import argparse
+from scipy.stats import skew, kurtosis
+import numpy as np
+
+def cal_features(read_scores):
+    feature=[]
+    event_mean = np.mean(read_scores)
+    event_std = np.std(read_scores)
+    event_length = len(read_scores)
+    event_skew = skew(read_scores)
+    event_kurtosis = kurtosis(read_scores)
+    
+    feature.append(event_mean)
+    feature.append(event_std)
+    feature.append(event_length)
+    feature.append(event_skew)
+    feature.append(event_kurtosis)
+    
+    return feature
 
 def get_file_marker(filename,threads):
     file_size = Path(filename).stat().st_size
@@ -35,6 +53,7 @@ def process_coverage(start_pos,end_pos,cutoff,filename):
             processed_bytes += len(line.encode('utf8'))
             if processed_bytes > end_pos - start_pos:
                 break
+            
             if score>cutoff:
                 predict_label=1
             else:
@@ -48,44 +67,13 @@ def process_coverage(start_pos,end_pos,cutoff,filename):
                 predict_scores[chr_name] = {}
             if pos not in coverage[chr_name]:
                 pos_coverage[chr_name][pos]=predict_label
-                predict_scores[chr_name][pos]=score
+                predict_scores[chr_name][pos]=[score]
                 coverage[chr_name][pos]=1
             else:
                 pos_coverage[chr_name][pos]+=predict_label
-                predict_scores[chr_name][pos]+=score
+                predict_scores[chr_name][pos].append(score)
                 coverage[chr_name][pos]+=1
-    # buf_size = 4 * 1024 * 1024 * 1024
-    # if buf_size > end_pos - start_pos:
-    #     buf_size = end_pos - start_pos
-    # with open(filename) as f:
-    #     f.seek(start_pos)
-    #     processed_bytes = 0
-    #     is_finished = False
-    #     while not is_finished:
-    #         lines = f.readlines(buf_size)
-    #         if len(lines) == 0:
-    #             break
-    #         for line in lines:
-    #             processed_bytes += len(line.encode('utf8'))
-    #             if processed_bytes > end_pos - start_pos:
-    #                 is_finished = True
-    #                 break
-    #             if float(line.split("\t")[-1])>cutoff:
-    #                 predict_label=1
-    #             else:
-    #                 predict_label=0
-                
-    #             chr_name= line.split("\t")[2]
-    #             pos = int(line.split("\t")[3])
-    #             if chr_name not in coverage:
-    #                 pos_coverage[chr_name] = {}
-    #                 coverage[chr_name] = {}
-    #             if pos not in coverage[chr_name]:
-    #                 pos_coverage[chr_name][pos]=predict_label
-    #                 coverage[chr_name][pos]=1
-    #             else:
-    #                 pos_coverage[chr_name][pos]+=predict_label
-    #                 coverage[chr_name][pos]+=1
+    
     return pos_coverage,coverage,predict_scores
 def aggregate_and_generate_output(list_of_pos_coverage,list_of_coverage,list_of_predict_scores,outputname,cov_cutoff,ratio_cutoff,mod_cov_cutoff):
     all_pos_coverage = list_of_pos_coverage[0]
@@ -101,16 +89,18 @@ def aggregate_and_generate_output(list_of_pos_coverage,list_of_coverage,list_of_
                 for pos in pos_coverage[chr_name]:
                     if pos not in all_pos_coverage[chr_name]:
                         all_pos_coverage[chr_name][pos] = 0
-                        all_predict_scores[chr_name][pos]=0
+                        all_predict_scores[chr_name][pos]=[]
                         all_coverage[chr_name][pos] = 0
                     all_pos_coverage[chr_name][pos] += pos_coverage[chr_name][pos]
                     all_coverage[chr_name][pos] += coverage[chr_name][pos]
-                    all_predict_scores[chr_name][pos] += predict_scores[chr_name][pos]
+                    all_predict_scores[chr_name][pos].extend(predict_scores[chr_name][pos])
+    
     with open(outputname,'w') as output:
         for chr_name in sorted(all_coverage.keys()):
             for pos in sorted(all_coverage[chr_name].keys()):
                 ratio = float(all_pos_coverage[chr_name][pos]/all_coverage[chr_name][pos])
-                avg_predict_score=float(all_predict_scores[chr_name][pos]/all_coverage[chr_name][pos])
+                #avg_predict_score=float(all_predict_scores[chr_name][pos]/all_coverage[chr_name][pos])
+                sitelve_features=cal_features(all_predict_scores[chr_name][pos])
                 if cov_cutoff is not None:
                      if all_coverage[chr_name][pos] < cov_cutoff:
                            continue
@@ -121,7 +111,7 @@ def aggregate_and_generate_output(list_of_pos_coverage,list_of_coverage,list_of_
                       if all_pos_coverage[chr_name][pos] < mod_cov_cutoff:
                            continue
                 
-                output.write(f'{chr_name}\t{pos}\t{all_pos_coverage[chr_name][pos]}\t{all_coverage[chr_name][pos]}\t{ratio:.3f}\t{avg_predict_score:.3f}\n')
+                output.write(f'{chr_name}\t{pos}\t{all_pos_coverage[chr_name][pos]}\t{all_coverage[chr_name][pos]}\t{ratio:.3f}\t{sitelve_features[0]:.4f}\t{sitelve_features[1]:.4f}\t{sitelve_features[2]:.4f}\t{sitelve_features[3]:.4f}\t{sitelve_features[4]:.4f}\n')
 
 
 if __name__ == "__main__":

@@ -36,7 +36,7 @@ def run_model(**kwargs):
          gpu_options = tf.GPUOptions()
          gpu_options.allow_growth = True
          config = tf.ConfigProto(gpu_options=gpu_options)
-         #config.gpu_options.per_process_gpu_memory_fraction=0.4
+         config.gpu_options.per_process_gpu_memory_fraction=0.4
          sess = tf.Session(config=config)
          set_session(session=sess)
     

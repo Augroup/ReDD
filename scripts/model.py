@@ -28,7 +28,7 @@ from attention_decoder import *
 OUTPATH = None
 # from sklearn.utils import shuffle
 
-np.random.seed(1234)
+#np.random.seed(1234)
 encoding_baseout = OrderedDict([
     (1,'A'),
     (2,'C'),
@@ -384,7 +384,11 @@ def generator_realdata(IVT_pos_file,IVT_neg_file,real_candidate_files,real_nonca
                        print("debug error: KO_noncandidate_samplesize="+str(temp['X']))
                        print(KO_noncandidate)
         
-        batch_size_KO_noncandidate=int(batch_size*KO_noncandidate_weight/len(KO_noncandidate_h5fs))
+        if len(KO_noncandidate_h5fs)==0:
+            batch_size_KO_noncandidate=0
+        else:
+            batch_size_KO_noncandidate=int(batch_size*KO_noncandidate_weight/len(KO_noncandidate_h5fs))
+        
         print("debug batch_size_KO_noncandidate="+str(batch_size_KO_noncandidate))
         print("KO_noncandidate_file_num="+str(len(KO_noncandidate_h5fs)))
         #KO noncandidate files end
@@ -413,7 +417,7 @@ def generator_realdata(IVT_pos_file,IVT_neg_file,real_candidate_files,real_nonca
            print("real_noncandidate_file_num="+str(len(real_noncandidate_h5fs[datatype])))
         
         #real noncandidate files end
-        win_center_index=int(len(KO_noncandidate_h5fs[0]['X'][0])/2)
+        win_center_index=int(len(real_noncandidate_h5fs[datatype][0]['X'][0])/2)
         nt = int(windowsize/2)
         
         AG_ratio_WT,AG_ratio_KO = [],[]
@@ -538,24 +542,26 @@ def generator_realdata(IVT_pos_file,IVT_neg_file,real_candidate_files,real_nonca
                sample_weights=[]
                #KO noncandidate start
                x_KO_batch,y_ref_KO_batch,y_call_KO_batch=[],[],[]
-               for _ in range(len(KO_noncandidate_h5fs)):
-                   #print("index_noncandidate_KO[_]="+str(index_noncandidate_KO[_])+"\n")
-                   x_KO_batch.append(KO_noncandidate_h5fs[_]['X'][index_noncandidate_KO[_]:(index_noncandidate_KO[_] + \
-                   batch_size_KO_noncandidate),win_center_index-nt:win_center_index+nt+1,:featuredim])
-                   y_ref_KO_batch.append(KO_noncandidate_h5fs[_]['y_ref'][index_noncandidate_KO[_]:(index_noncandidate_KO[_] + batch_size_KO_noncandidate)])
-                   y_call_KO_batch.append(KO_noncandidate_h5fs[_]['y_call'][index_noncandidate_KO[_]:(index_noncandidate_KO[_] + batch_size_KO_noncandidate)])
+               if len(KO_noncandidate_h5fs)>0:
+                   for _ in range(len(KO_noncandidate_h5fs)):
+                       #print("index_noncandidate_KO[_]="+str(index_noncandidate_KO[_])+"\n")
+                       x_KO_batch.append(KO_noncandidate_h5fs[_]['X'][index_noncandidate_KO[_]:(index_noncandidate_KO[_] + \
+                       batch_size_KO_noncandidate),win_center_index-nt:win_center_index+nt+1,:featuredim])
+                       y_ref_KO_batch.append(KO_noncandidate_h5fs[_]['y_ref'][index_noncandidate_KO[_]:(index_noncandidate_KO[_] + batch_size_KO_noncandidate)])
+                       y_call_KO_batch.append(KO_noncandidate_h5fs[_]['y_call'][index_noncandidate_KO[_]:(index_noncandidate_KO[_] + batch_size_KO_noncandidate)])
+                       
+                       index_noncandidate_KO[_] +=batch_size_KO_noncandidate
+                       if index_noncandidate_KO[_]>KO_noncandidate_samplesize[_]:
+                           print("debug KO noncandidate to the end size. in file \n")
+                       
+                       index_noncandidate_KO[_] %= KO_noncandidate_samplesize[_]
                    
-                   index_noncandidate_KO[_] +=batch_size_KO_noncandidate
-                   if index_noncandidate_KO[_]>KO_noncandidate_samplesize[_]:
-                       print("debug KO noncandidate to the end size. in file \n")
-                   
-                   index_noncandidate_KO[_] %= KO_noncandidate_samplesize[_]
+                   x_KO_batch = np.concatenate(x_KO_batch,0)
+                   sample_weights.extend(np.ones(len(x_KO_batch)))
+                   y_ref_KO_batch = np.concatenate(y_ref_KO_batch,0)
+                   y_call_KO_batch = np.concatenate(y_call_KO_batch,0)
+                   #KO noncandidate end
                
-               x_KO_batch = np.concatenate(x_KO_batch,0)
-               sample_weights.extend(np.ones(len(x_KO_batch)))
-               y_ref_KO_batch = np.concatenate(y_ref_KO_batch,0)
-               y_call_KO_batch = np.concatenate(y_call_KO_batch,0)
-               #KO noncandidate end
                #real noncandidate start
                X_real_noncandidate,y_ref_real_noncandidate,y_call_real_noncandidate=[],[],[]
                for _ in range(len(real_noncandidate_h5fs[datatype])):
@@ -640,11 +646,19 @@ def generator_realdata(IVT_pos_file,IVT_neg_file,real_candidate_files,real_nonca
                       y_call_real.append(KO_candidate_h5fs[datatype]['y_call'][index])
                
                sample_weights = np.asarray(sample_weights)
-               x = np.concatenate([x_KO_batch,X_real_noncandidate,x_real],axis = 0)
-               y_ref = np.concatenate([y_ref_KO_batch,y_ref_real_noncandidate,y_ref_real],axis = 0)
-               y_call = np.concatenate([y_call_KO_batch,y_call_real_noncandidate,y_call_real],axis = 0)
-               mod_label = np.concatenate([np.zeros(len(x_KO_batch)),np.zeros(len(X_real_noncandidate)),mod_label_real],axis=0)
-               ratio_label = np.concatenate([np.zeros(len(x_KO_batch)),np.zeros(len(X_real_noncandidate)),ratio_label_real],axis=0)
+               if len(x_KO_batch)>0:
+                    x = np.concatenate([x_KO_batch,X_real_noncandidate,x_real],axis = 0)
+                    y_ref = np.concatenate([y_ref_KO_batch,y_ref_real_noncandidate,y_ref_real],axis = 0)
+                    y_call = np.concatenate([y_call_KO_batch,y_call_real_noncandidate,y_call_real],axis = 0)
+                    mod_label = np.concatenate([np.zeros(len(x_KO_batch)),np.zeros(len(X_real_noncandidate)),mod_label_real],axis=0)
+                    ratio_label = np.concatenate([np.zeros(len(x_KO_batch)),np.zeros(len(X_real_noncandidate)),ratio_label_real],axis=0)
+               else:
+                    x = np.concatenate([X_real_noncandidate,x_real],axis = 0)
+                    y_ref = np.concatenate([y_ref_real_noncandidate,y_ref_real],axis = 0)
+                    y_call = np.concatenate([y_call_real_noncandidate,y_call_real],axis = 0)
+                    mod_label = np.concatenate([np.zeros(len(X_real_noncandidate)),mod_label_real],axis=0)
+                    ratio_label = np.concatenate([np.zeros(len(X_real_noncandidate)),ratio_label_real],axis=0)
+               
                sample_weights_base = np.ones(len(sample_weights))
                print("pseudo_label\n")
                if sample_weights_flag:
@@ -653,7 +667,7 @@ def generator_realdata(IVT_pos_file,IVT_neg_file,real_candidate_files,real_nonca
                        yield([x,np.expand_dims(y_ref,axis=-1),np.expand_dims(y_call,axis=-1)],[np.expand_dims(y_ref,axis=-1), np.expand_dims(y_call, -1),np.expand_dims(ratio_label,-1),np.expand_dims(ratio_label,-1)])
 
 def generator_IVT_shuffle(IVT_pos_file,IVT_neg_file,real_candidate_files,real_noncandidate_files,KO_candidate_files,KO_noncandidate_files,batch_size,bin=0.2,binsample=200,WT_label=1,
-        binselecttype=1,sample_weights_flag=True,featuredim=3,windowsize=9): #fixed start np.arnage(0,1,bin)
+        binselecttype=1,sample_weights_flag=True,featuredim=3,windowsize=9,weight_exp=1,KO_noncandidate_weight=1,real_noncandidate_weight=1): #fixed start np.arnage(0,1,bin)
         print("generator_IVT_shuffle")
         #IVT data
         IVT_pos_h5fs=h5py.File(IVT_pos_file,"r")
@@ -712,7 +726,7 @@ def generator_IVT_shuffle(IVT_pos_file,IVT_neg_file,real_candidate_files,real_no
 
 
 def generator_IVT(IVT_pos_file,IVT_neg_file,real_candidate_files,real_noncandidate_files,KO_candidate_files,KO_noncandidate_files,batch_size,bin=0.2,binsample=200,WT_label=1,
-        binselecttype=1,sample_weights_flag=True,featuredim=3,windowsize=9): #fixed start np.arnage(0,1,bin)
+        binselecttype=1,sample_weights_flag=True,featuredim=3,windowsize=9,weight_exp=1,KO_noncandidate_weight=1,real_noncandidate_weight=1): #fixed start np.arnage(0,1,bin)
         print("generator_IVT")
         #IVT data
         IVT_pos_h5fs=h5py.File(IVT_pos_file,"r")
@@ -745,7 +759,7 @@ def generator_IVT(IVT_pos_file,IVT_neg_file,real_candidate_files,real_noncandida
             yield([x,np.expand_dims(y_ref,axis=-1),np.expand_dims(y_call,axis=-1)],[np.expand_dims(y_ref,axis=-1), np.expand_dims(y_call, -1),mod_label,np.expand_dims(ratio_label,-1)])
 
 
-def batch_predict(hdf5filelist,modellist,outputfile,maxoutputlen=13,batch_size=1000,verbose=0,featuredim=3,windowsize=9,printref=False):
+def batch_predict(hdf5filelist,modellist,outputfile,maxoutputlen=13,batch_size=1000,verbose=1,featuredim=3,windowsize=9,printref=False):
     output = open(outputfile,'w')
     hdf5filelist=hdf5filelist.replace("\"",'')
     hdf5files = hdf5filelist.split(',')
@@ -970,9 +984,9 @@ class multihead_attention:
              print("Error in loading weights, check weights "+str(weight_dir))
         
         self.bn = False
-        #self.model.summary()
+        self.model.summary()
     
-    def train(self,samplesize,real_candidate_files,real_noncandidate_files,KO_candidate_files,KO_noncandidate_files,IVT_pos_file=None,IVT_neg_file=None,batch_size=1000,epochs=100,x_valid=None,y_valid_ref=None,y_valid_call=None,val_mod_label=None,val_ratio_label=None,early_stop=0,bin=0.2,binsample=100,traintype="basecall",WT_label=1,binselecttype=1,steps_per_epoch=1000,sample_weights_flag=True,shuffleIVT=False,weight_exp=1,KO_noncandidate_weight=1,real_noncandidate_weight=1):
+    def train(self,samplesize,real_candidate_files,real_noncandidate_files,KO_candidate_files,KO_noncandidate_files,IVT_pos_file=None,IVT_neg_file=None,batch_size=1000,epochs=100,val_real_candidate_files=None,val_real_noncandidate_files=None,val_KO_candidate_files=None,val_KO_noncandidate_files=None,val_IVT_pos_file=None,val_IVT_neg_file=None,early_stop=0,bin=0.2,binsample=100,traintype="basecall",WT_label=1,binselecttype=1,steps_per_epoch=1000,sample_weights_flag=True,shuffleIVT=False,weight_exp=1,KO_noncandidate_weight=1,real_noncandidate_weight=1):
         print("debug training\n")
         print("steps_per_epoch="+str(steps_per_epoch)+"\n")
         if real_candidate_files is not None:
@@ -982,9 +996,11 @@ class multihead_attention:
             KO_noncandidate_files=KO_noncandidate_files.replace("\"",'')
         
         print("samplesize:"+str(samplesize)) #use the smallest dataset (real data) as sample size!
-        if x_valid is not None:
+        if val_real_candidate_files is not None:
            #print("Monitor on validation data\n")
            val_prefix = "val_"
+           h5f = h5py.File(val_real_candidate_files,"r")
+           validation_steps=binsample
         else:
            val_prefix=""
         
@@ -1027,7 +1043,7 @@ class multihead_attention:
             else:
                  generator_fun = generator_all #generator_IVT_data#generator_IVT_data_nonshuffle
         
-        if x_valid is None:
+        if val_real_candidate_files is None:
            #print("no val")
            if early_stop!=0:
                history=self.model.fit_generator(generator_fun(IVT_pos_file,IVT_neg_file,real_candidate_files,real_noncandidate_files,KO_candidate_files,KO_noncandidate_files,batch_size=batch_size,bin=bin,binsample=binsample,WT_label=WT_label,binselecttype=binselecttype,sample_weights_flag=sample_weights_flag,featuredim=self.featuredim,windowsize=self.max_len,weight_exp=weight_exp,KO_noncandidate_weight=KO_noncandidate_weight,real_noncandidate_weight=real_noncandidate_weight), steps_per_epoch=steps_per_epoch, epochs=epochs, verbose=1,
@@ -1039,16 +1055,20 @@ class multihead_attention:
             #print("val and early_stop")
             #print("x_valid shape="+str(x_valid.shape))
             #print("y_valid_ref shape="+str(y_valid_ref.shape))
-            val_fake_input = np.zeros([len(x_valid),self.maxoutputlen,1])
+            #val_fake_input = np.zeros([len(x_valid),self.maxoutputlen,1])
             history=self.model.fit_generator(generator_fun(IVT_pos_file,IVT_neg_file,real_candidate_files,real_noncandidate_files,KO_candidate_files,KO_noncandidate_files,batch_size=batch_size,bin=bin,binsample=binsample,WT_label=WT_label,binselecttype=binselecttype,sample_weights_flag=sample_weights_flag,featuredim=self.featuredim,windowsize=self.max_len,weight_exp=weight_exp,KO_noncandidate_weight=KO_noncandidate_weight,real_noncandidate_weight=real_noncandidate_weight), steps_per_epoch=steps_per_epoch, epochs=epochs, verbose=1,
                         callbacks=[model_checkpoint,early_stopping,model_checkpoint_everystep], shuffle=True,\
-                        validation_data=[[x_valid,val_fake_input,val_fake_input],[np.expand_dims(y_valid_ref,axis=-1),np.expand_dims(y_valid_call,axis=-1),val_mod_label,np.expand_dims(val_ratio_label,-1)]])
+                        #validation_data=[[x_valid,val_fake_input,val_fake_input],[np.expand_dims(y_valid_ref,axis=-1),np.expand_dims(y_valid_call,axis=-1),val_mod_label,np.expand_dims(val_ratio_label,-1)]]
+                        validation_data=generator_fun(val_IVT_pos_file,val_IVT_neg_file,val_real_candidate_files,val_real_noncandidate_files,val_KO_candidate_files,val_KO_noncandidate_files,batch_size=batch_size,bin=bin,binsample=binsample,WT_label=WT_label,binselecttype=binselecttype,sample_weights_flag=sample_weights_flag,featuredim=self.featuredim,windowsize=self.max_len,weight_exp=weight_exp,KO_noncandidate_weight=KO_noncandidate_weight,real_noncandidate_weight=real_noncandidate_weight),validation_steps =validation_steps 
+                        )
         else:
             print("val")
-            val_fake_input = np.zeros([len(x_valid),self.maxoutputlen,1])
+            #val_fake_input = np.zeros([len(x_valid),self.maxoutputlen,1])
             history=self.model.fit_generator(generator_fun(IVT_pos_file,IVT_neg_file,real_candidate_files,real_noncandidate_files,KO_candidate_files,KO_noncandidate_files,batch_size=batch_size,bin=bin,binsample=binsample,WT_label=WT_label,binselecttype=binselecttype,sample_weights_flag=sample_weights_flag,featuredim=self.featuredim,windowsize=self.max_len,weight_exp=weight_exp,KO_noncandidate_weight=KO_noncandidate_weight,real_noncandidate_weight=real_noncandidate_weight), steps_per_epoch=steps_per_epoch, epochs=epochs, verbose=1,
                         callbacks=[model_checkpoint,model_checkpoint_everystep], shuffle=True,\
-                        validation_data=[[x_valid,val_fake_input,val_fake_input],[np.expand_dims(y_valid_ref,axis=-1),np.expand_dims(y_valid_call,axis=-1),val_mod_label,np.expand_dims(val_ratio_label,-1)]])
+                        validation_data=generator_fun(val_IVT_pos_file,val_IVT_neg_file,val_real_candidate_files,val_real_noncandidate_files,val_KO_candidate_files,val_KO_noncandidate_files,batch_size=batch_size,bin=bin,binsample=binsample,WT_label=WT_label,binselecttype=binselecttype,sample_weights_flag=sample_weights_flag,featuredim=self.featuredim,windowsize=self.max_len,weight_exp=weight_exp,KO_noncandidate_weight=KO_noncandidate_weight,real_noncandidate_weight=real_noncandidate_weight),validation_steps =validation_steps
+                        #validation_data=[[x_valid,val_fake_input,val_fake_input],[np.expand_dims(y_valid_ref,axis=-1),np.expand_dims(y_valid_call,axis=-1),val_mod_label,np.expand_dims(val_ratio_label,-1)]]
+                        )
         
         hist = history.history
         if traintype=="basecall":

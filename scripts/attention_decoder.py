@@ -528,7 +528,7 @@ class AttentionDecoder(Recurrent):
         )
         
         #print("att outputs shape") #
-        #print(outputs.get_shape())  #(?,15,6)
+        # print(outputs.get_shape())  #(?,15,6)
         return outputs
     
     def get_initial_state(self, inputs):
