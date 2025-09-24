@@ -997,7 +997,6 @@ def generator_realdata(
                     index_noncandidate_real[datatype][
                         _
                     ] %= real_noncandidate_samplesize[datatype][_]
-
                 X_real_noncandidate = np.concatenate(X_real_noncandidate, 0)
                 # print("X_real_noncandidate="+str(len(X_real_noncandidate)))
                 sample_weights.extend(np.ones(len(X_real_noncandidate)))
@@ -1057,43 +1056,45 @@ def generator_realdata(
                     select_sample_size = np.min(
                         [batch_size, len(AG_ratio_WT_index[ratio_select][datatype])]
                     )
-                    select_sampleindex_list = np.random.choice(
-                        AG_ratio_WT_index[ratio_select][datatype],
-                        select_sample_size,
-                        replace=False,
+                    select_sampleindex_list = sorted(
+                        np.random.choice(
+                            AG_ratio_WT_index[ratio_select][datatype],
+                            select_sample_size,
+                            replace=False,
+                        )
                     )  # slow
-                    for index in select_sampleindex_list:
-                        info = real_candidate_h5fs[datatype]["info"][index]
-                        # print(info)
-                        label = info.split("\t")[0]
-                        label1 = label.split(":")[0]
-                        ratio = float(label.split(":")[1])
-                        sample_weight = (
-                            1
-                            - np.abs(
-                                (ratio - 1) * np.log(1 - ratio + 1e-07)
-                                - ratio * np.log(ratio + 1e-07)
-                            )
-                            ** weight_exp
-                        )
-                        sample_weights.append(sample_weight)
-                        if WT_label == 1:
-                            mod_label_real.append(1)
-                        else:
-                            mod_label_real.append(ratio)
-
-                        ratio_label_real.append(ratio)
-                        x_real.append(
-                            real_candidate_h5fs[datatype]["X"][
-                                index,
-                                win_center_index - nt : win_center_index + nt + 1,
-                                :featuredim,
+                    ratio = np.array(
+                        [
+                            float(info.split("\t")[0].split(":")[1])
+                            for info in real_candidate_h5fs[datatype]["info"][
+                                select_sampleindex_list
                             ]
+                        ]
+                    )
+                    sample_weights.extend(
+                        1
+                        - np.abs(
+                            (ratio - 1) * np.log(1 - ratio + 1e-07)
+                            - ratio * np.log(ratio + 1e-07)
                         )
-                        y_ref_real.append(real_candidate_h5fs[datatype]["y_ref"][index])
-                        y_call_real.append(
-                            real_candidate_h5fs[datatype]["y_call"][index]
-                        )
+                        ** weight_exp
+                    )
+                    if WT_label == 1:
+                        mod_label_real = np.ones(len(ratio))
+                    else:
+                        mod_label_real = ratio
+                    ratio_label_real = ratio
+                    x_real = real_candidate_h5fs[datatype]["X"][
+                        select_sampleindex_list,
+                        win_center_index - nt : win_center_index + nt + 1,
+                        :featuredim,
+                    ]
+                    y_ref_real = real_candidate_h5fs[datatype]["y_ref"][
+                        select_sampleindex_list
+                    ]
+                    y_call_real = real_candidate_h5fs[datatype]["y_call"][
+                        select_sampleindex_list
+                    ]
 
                 # for _ in range(KO_candidate_file_num): same as real_candidate_file_num
                 if ratio_select in AG_ratio_KO_index:
@@ -1104,27 +1105,39 @@ def generator_realdata(
                     select_sample_size = np.min(
                         [batch_size, len(AG_ratio_KO_index[ratio_select][datatype])]
                     )
-                    select_sampleindex_list = np.random.choice(
-                        AG_ratio_KO_index[ratio_select][datatype],
-                        select_sample_size,
-                        replace=False,
-                    )  # not very sloww!
-                    for index in select_sampleindex_list:
-                        info = KO_candidate_h5fs[datatype]["info"][index]
-                        label = info.split("\t")[0]
-                        ratio = float(label.split(":")[1])
-                        sample_weights.append(1)
-                        mod_label_real.append(0)
-                        ratio_label_real.append(0)
-                        x_real.append(
-                            KO_candidate_h5fs[datatype]["X"][
-                                index,
-                                win_center_index - nt : win_center_index + nt + 1,
-                                :featuredim,
-                            ]
+                    select_sampleindex_list = sorted(
+                        np.random.choice(
+                            AG_ratio_KO_index[ratio_select][datatype],
+                            select_sample_size,
+                            replace=False,
                         )
-                        y_ref_real.append(KO_candidate_h5fs[datatype]["y_ref"][index])
-                        y_call_real.append(KO_candidate_h5fs[datatype]["y_call"][index])
+                    )  # not very sloww!
+                    sample_weights.extend(np.ones(len(select_sampleindex_list)))
+                    mod_label_real = np.append(
+                        mod_label_real, np.zeros(len(select_sampleindex_list))
+                    )
+                    ratio_label_real = np.append(
+                        ratio_label_real, np.zeros(len(select_sampleindex_list))
+                    )
+                    x_real = np.append(
+                        x_real,
+                        KO_candidate_h5fs[datatype]["X"][
+                            select_sampleindex_list,
+                            win_center_index - nt : win_center_index + nt + 1,
+                            :featuredim,
+                        ],
+                        axis=0,
+                    )
+                    y_ref_real = np.append(
+                        y_ref_real,
+                        KO_candidate_h5fs[datatype]["y_ref"][select_sampleindex_list],
+                        axis=0,
+                    )
+                    y_call_real = np.append(
+                        y_call_real,
+                        KO_candidate_h5fs[datatype]["y_call"][select_sampleindex_list],
+                        axis=0,
+                    )
 
                 sample_weights = np.asarray(sample_weights)
                 if len(x_KO_batch) > 0:
