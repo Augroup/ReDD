@@ -19,6 +19,7 @@ import os
 import sys
 from keras.utils.io_utils import HDF5Matrix
 import h5py
+import hdf5plugin
 from scipy.signal import gaussian
 from scipy.ndimage.filters import maximum_filter1d
 
@@ -28,6 +29,12 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 import tensorflow as tf
 from keras.backend.tensorflow_backend import set_session
 import keras.backend as K
+import numpy as np
+import random
+seed = 42
+random.seed(seed)
+np.random.seed(seed)
+tf.random.set_random_seed(seed)
 from model import *  #add noncanddiate site 
 
 #batch_size = 1000 #batch size must < 148 because smallest ratio is 148 for 0.2 bin

@@ -8,6 +8,7 @@ import numpy as np
 import os
 import sys
 import h5py
+import hdf5plugin
 
 from keras.layers.core import Dense, Dropout, Flatten
 from keras.layers import (
@@ -45,8 +46,6 @@ from attention_decoder import *
 
 OUTPATH = None
 # from sklearn.utils import shuffle
-
-# np.random.seed(1234)
 encoding_baseout = OrderedDict(
     [
         (1, "A"),
@@ -56,6 +55,11 @@ encoding_baseout = OrderedDict(
         (0, "N"),
     ]
 )
+mean_std_dict = {0: (0.16595839, 1.2457585),
+ 1: (0.34715647, 0.24490204),
+ 2: (40.366066, 62.832085),
+ 3: (0.08162985, 0.9814831),
+ 4: (0.9163628, 2.7402976)}
 
 
 def generator_all(
@@ -669,7 +673,7 @@ def generator_realdata(
     KO_noncandidate_weight=1,
     real_noncandidate_weight=1,
 ):  # fixed start np.arnage(0,1,bin)
-    print("generator_all")
+    print("generator_realdata")
     real_candidate_files = real_candidate_files.replace('"', "")
     real_noncandidate_files = real_noncandidate_files.replace('"', "")
     KO_candidate_files = KO_candidate_files.replace('"', "")
@@ -1183,6 +1187,8 @@ def generator_realdata(
 
                 sample_weights_base = np.ones(len(sample_weights))
                 print("pseudo_label\n")
+                for feat_index in range(5):
+                    x[:,:,feat_index] = (x[:,:,feat_index]-mean_std_dict[feat_index][0])/(mean_std_dict[feat_index][1])
                 if sample_weights_flag:
                     yield (
                         [
@@ -1747,7 +1753,7 @@ class multihead_attention:
 
         from keras import optimizers
 
-        optim = optimizers.nadam()
+        optim = optimizers.Adam(lr=1e-10)
         self.model.compile(
             loss=[
                 "sparse_categorical_crossentropy",
@@ -1756,7 +1762,7 @@ class multihead_attention:
                 ratio_loss,
             ],
             loss_weights=loss_weights,
-            optimizer="adam",
+            optimizer=optim,
             metrics={
                 "ref_base": new_sparse_categorical_accuracy,
                 "called_base": new_sparse_categorical_accuracy,

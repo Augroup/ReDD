@@ -11,6 +11,7 @@ import os
 import sys
 from keras.utils.io_utils import HDF5Matrix
 import h5py
+import hdf5plugin
 #os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 #sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import tensorflow as tf

@@ -19,6 +19,7 @@ import os
 import sys
 from keras.utils.io_utils import HDF5Matrix
 import h5py
+import hdf5plugin
 from scipy.signal import gaussian
 from scipy.ndimage.filters import maximum_filter1d
 
@@ -27,6 +28,12 @@ from scipy.ndimage.filters import maximum_filter1d
 import tensorflow as tf
 from keras.backend.tensorflow_backend import set_session
 import keras.backend as K
+import random
+import numpy as np
+seed = 42
+random.seed(seed)
+np.random.seed(seed)
+tf.random.set_random_seed(seed)
 from model import *  #add noncanddiate site 
 
 #batch_size = 1000 #batch size must < 148 because smallest ratio is 148 for 0.2 bin
@@ -170,7 +177,7 @@ def run_model(dataset, **kwargs):
            loss_weights=[1., 1.,1.,0]
            traintype="modloss"
        else:
-            loss_weights=[float(x) for x in kwargs['trainloss'].split("-")]
+            loss_weights=[float(x) for x in kwargs['trainloss'].split(",")]
        
        print("Training for modification procedure...\n")
        print(loss_weights)
