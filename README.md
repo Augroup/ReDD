@@ -499,8 +499,9 @@ bash test_data/rna004/run_test.sh [output_dir] [CPU|GPU] [pod5|bam]
 `pod5` (default) runs the full pipeline including Dorado basecalling; `bam` starts from the provided basecalls. Outputs land in
 `output_dir/outputs/`: `HEK293T-WT_chr11_sub.prediction.genome.txt` (178,594 read x A-site predictions), `.site.bed` (2,845 sites
 with coverage >= 5), `.flt.genome.tab` (1,083 sites after filtering) and `precomputed_visualization/`. On 8 CPU threads the `bam` mode
-takes ~40 min (uncalled4 extraction ~30 s, model inference ~37 min); on a GPU inference takes seconds. Dorado `sup` basecalling of the
-600 test reads on CPU adds ~25 min and needs ~26 GB RAM, so use `GPU` when one is available.
+takes ~40 min (uncalled4 extraction ~30 s, model inference ~37 min); on a GPU inference takes seconds. The `pod5` mode adds Dorado
+`sup` basecalling of the 600 reads (~26 min and ~28 GB RAM on 8 CPU threads; seconds on a GPU) and gives 178,029 predictions /
+2,823 sites / 1,068 filtered sites — slightly different from the `bam` mode because CPU and GPU basecalls of the same reads differ.
 
 ## Possible issues and solutions (to be continue)
 * After run generate_script.py, a **run.pbs**, and a **config.yaml** file will be generated in {output_path}.You can refere to run.pbs and config.yaml for details of the commands and configurations.
