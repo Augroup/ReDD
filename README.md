@@ -433,41 +433,36 @@ Ready-to-run images are published on Docker Hub as [`tidesun/redd-rna004`](https
 | `gpu` (= `latest`) | CUDA 12.4 wheel | NVIDIA GPU hosts (driver + [NVIDIA container toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/) needed); also runs on CPU |
 | `cpu` | CPU-only wheel (smaller) | hosts without a GPU |
 
-The image contains the pipeline code (`main` branch, at `/opt/ReDD`) and the `ReDD_RNA004` conda environment. To keep it small,
-**Dorado, the basecalling model and the ReDD model weights (~8 GB) are not inside the image**: they live in a volume mounted at
-`/opt/redd-assets` and are downloaded once with `redd-fetch-assets` (`/opt/ReDD/software` and `/opt/ReDD/scripts/models/rna004` are
-symlinks into that volume, so all default paths of `generate_script.py rna004` work unchanged). The test data is not in the image either;
-mount it from a clone of the repository.
+The image contains the pipeline code (`main` branch, at `/opt/ReDD`) and the `ReDD_RNA004` conda environment. Dorado, the basecalling
+model and the ReDD model weights (~8 GB) are downloaded inside the container by `redd-fetch-assets`; run it at the start of your
+command as below. Everything else in `generate_script.py rna004` then works with its default paths.
 
 ```
-# 1. one-time: download Dorado 1.1.1 + rna004_130bps_sup@v5.2.0 + general.pt into a persistent volume
-docker volume create redd-assets
-docker run --rm -v redd-assets:/opt/redd-assets tidesun/redd-rna004:gpu redd-fetch-assets
-
-# 2. smoke test on the bundled test data (600 HEK293T-WT reads), from pod5 including basecalling
-git clone --depth 1 https://github.com/Augroup/ReDD.git
-docker run --rm --gpus all -v redd-assets:/opt/redd-assets \
-    -v $PWD/ReDD/test_data:/opt/ReDD/test_data -v /path/on/host:/data \
-    tidesun/redd-rna004:gpu bash test_data/rna004/run_test.sh /data/redd_test GPU
-
-# 3. your data: generate run.pbs/config.yaml, then execute it
-docker run --rm --gpus all -v redd-assets:/opt/redd-assets -v /path/on/host:/data tidesun/redd-rna004:gpu bash -c \
-  "python generate_script.py rna004 --pipeline_mode bash --input_pod5 /data/pod5 --ref_genome /data/genome.fa \
+# your data: download assets, generate run.pbs/config.yaml, execute the pipeline
+docker run --rm --gpus all -v /path/on/host:/data tidesun/redd-rna004:gpu bash -c \
+  "redd-fetch-assets && \
+   python generate_script.py rna004 --pipeline_mode bash --input_pod5 /data/pod5 --ref_genome /data/genome.fa \
      --output_path /data/run1 --output_name sample1 --device GPU && bash /data/run1/run.pbs"
+
+# smoke test on the bundled test data (600 HEK293T-WT reads, from pod5 including basecalling); the test data is not in the image
+git clone --depth 1 https://github.com/Augroup/ReDD.git
+docker run --rm --gpus all -v $PWD/ReDD/test_data:/opt/ReDD/test_data -v /path/on/host:/data tidesun/redd-rna004:gpu bash -c \
+  "redd-fetch-assets && bash test_data/rna004/run_test.sh /data/redd_test GPU"
 ```
 Without a GPU use `tidesun/redd-rna004:cpu`, drop `--gpus all` and pass `--device CPU` (see the CPU notes below; Dorado on CPU is slow).
-`redd-fetch-assets` honours `DORADO_VERSION`, `DORADO_MODEL` and `REDD_MODEL` (e.g. `-e DORADO_MODEL=rna004_130bps_hac@v5.2.0`) and is safe
-to re-run; the container prints a reminder at start-up if the assets are missing. Already-basecalled data can be given with
-`--input_bam /data/dorado.bam` (Dorado BAM with move tags) instead of basecalling inside the container.
+Already-basecalled data can be given with `--input_bam /data/dorado.bam` (Dorado BAM with move tags) instead of basecalling inside the
+container. The assets are re-downloaded for every new container; to download them once and reuse them, add a volume:
+`docker volume create redd-assets` and `-v redd-assets:/opt/redd-assets` on every `docker run` (`redd-fetch-assets` skips files that
+are already present). `DORADO_VERSION`, `DORADO_MODEL` and `REDD_MODEL` (e.g. `-e DORADO_MODEL=rna004_130bps_hac@v5.2.0`) select other
+Dorado/model versions.
 
-With Apptainer/Singularity (e.g. on an HPC cluster):
+With Apptainer/Singularity (e.g. on an HPC cluster; the container filesystem is read-only, so give the assets a host directory):
 ```
 apptainer pull redd-rna004.sif docker://tidesun/redd-rna004:gpu
 mkdir -p redd-assets
-apptainer exec -B redd-assets:/opt/redd-assets redd-rna004.sif redd-fetch-assets
 apptainer exec --nv -B redd-assets:/opt/redd-assets -B /path/on/host:/data redd-rna004.sif bash -c \
-  "cd /opt/ReDD && python generate_script.py rna004 --pipeline_mode bash --input_pod5 /data/pod5 --ref_genome /data/genome.fa \
-     --output_path /data/run1 --output_name sample1 --device GPU && bash /data/run1/run.pbs"
+  "redd-fetch-assets && cd /opt/ReDD && python generate_script.py rna004 --pipeline_mode bash --input_pod5 /data/pod5 \
+     --ref_genome /data/genome.fa --output_path /data/run1 --output_name sample1 --device GPU && bash /data/run1/run.pbs"
 ```
 
 ## Usage (RNA004)
