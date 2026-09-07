@@ -6,6 +6,116 @@
 * The code to reproduce figures and results in the manuscript is deposited in `reproduce_scripts` folder.
 # Getting started
 **Besides running ReDD locally, we also provides [Argo-ReDD](https://redd-portal.me): a **cloud-based platform** to run ReDD online without the need to prepare a computing environment.**
+# RNA004 support
+
+ReDD now supports ONT **RNA004** direct RNA data (kit `SQK-RNA004`, flow cell `FLO-PRO004RA`, pod5 raw data, Dorado
+basecalling). RNA004 has its own workflow ([Snakefile_RNA004](Snakefile_RNA004)), its own conda environment
+([environment_rna004.yaml](environment_rna004.yaml)) and a new PyTorch model; the RNA002 pipeline described above is unchanged.
+
+## Installation (RNA004)
+
+```
+git clone https://github.com/Augroup/ReDD && cd ReDD
+conda env create -n ReDD_RNA004 --file environment_rna004.yaml   # run from the repository root
+conda activate ReDD_RNA004
+bash scripts/rna004/install_dorado.sh                            # Dorado 1.1.1 + rna004_130bps_sup@v5.2.0 -> software/dorado
+bash scripts/rna004/download_model.sh                            # RNA004 model weights -> scripts/models/rna004/general.pt
+```
+The environment build compiles and installs the vendored **uncalled4 ReDD fork** in [uncalled4_ReDD/](uncalled4_ReDD/) (source of the
+`--redd-out`, `--redd-candidate` and `--redd-window-size` options; see [uncalled4_ReDD/VENDORED_FROM.txt](uncalled4_ReDD/VENDORED_FROM.txt)).
+PyTorch 2.6.0 is installed from PyPI (runs on CPU and CUDA GPUs). `install_dorado.sh` downloads Dorado and the basecalling model
+from Oxford Nanopore into `software/dorado/` (Dorado has its own licence and is not stored in this repository); Dorado needs a GPU
+for realistic data sizes.
+
+**Model weights**: `scripts/models/rna004/general.pt` (652 MB) is not stored in git; download it before running the pipeline:
+```
+bash scripts/rna004/download_model.sh      # -> scripts/models/rna004/general.pt (from https://reddexamples.s3.us-east-2.amazonaws.com/RNA004/general.pt)
+```
+
+## Docker (RNA004)
+
+Ready-to-run images are published on Docker Hub as [`tidesun/redd-rna004`](https://hub.docker.com/r/tidesun/redd-rna004):
+
+| tag | torch build | use |
+|---|---|---|
+| `gpu` (= `latest`) | CUDA 12.4 wheel | NVIDIA GPU hosts (driver + [NVIDIA container toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/) needed); also runs on CPU |
+| `cpu` | CPU-only wheel (smaller) | hosts without a GPU |
+
+The image contains the pipeline code (`main` branch, at `/opt/ReDD`) and the `ReDD_RNA004` conda environment. Dorado, the basecalling
+model and the ReDD model weights (~8 GB) are downloaded inside the container by `redd-fetch-assets`; run it at the start of your
+command as below. Everything else in `generate_script.py rna004` then works with its default paths.
+
+```
+# your data: download assets, generate run.pbs/config.yaml, execute the pipeline
+docker run --rm --gpus all -v /path/on/host:/data tidesun/redd-rna004:gpu bash -c \
+  "redd-fetch-assets && \
+   python generate_script.py rna004 --pipeline_mode bash --input_pod5 /data/pod5 --ref_genome /data/genome.fa \
+     --output_path /data/run1 --output_name sample1 --device GPU && bash /data/run1/run.pbs"
+
+# smoke test on the bundled test data (600 HEK293T-WT reads, from pod5 including basecalling); the test data is not in the image
+git clone --depth 1 https://github.com/Augroup/ReDD.git
+docker run --rm --gpus all -v $PWD/ReDD/test_data:/opt/ReDD/test_data -v /path/on/host:/data tidesun/redd-rna004:gpu bash -c \
+  "redd-fetch-assets && bash test_data/rna004/run_test.sh /data/redd_test GPU"
+```
+Without a GPU use `tidesun/redd-rna004:cpu`, drop `--gpus all` and pass `--device CPU` (see the CPU notes below; Dorado on CPU is slow).
+Already-basecalled data can be given with `--input_bam /data/dorado.bam` (Dorado BAM with move tags) instead of basecalling inside the
+container. The assets are re-downloaded for every new container; to download them once and reuse them, add a volume:
+`docker volume create redd-assets` and `-v redd-assets:/opt/redd-assets` on every `docker run` (`redd-fetch-assets` skips files that
+are already present). `DORADO_VERSION`, `DORADO_MODEL` and `REDD_MODEL` (e.g. `-e DORADO_MODEL=rna004_130bps_hac@v5.2.0`) select other
+Dorado/model versions.
+
+With Apptainer/Singularity (e.g. on an HPC cluster; the container filesystem is read-only, so give the assets a host directory):
+```
+apptainer pull redd-rna004.sif docker://tidesun/redd-rna004:gpu
+mkdir -p redd-assets
+apptainer exec --nv -B redd-assets:/opt/redd-assets -B /path/on/host:/data redd-rna004.sif bash -c \
+  "redd-fetch-assets && cd /opt/ReDD && python generate_script.py rna004 --pipeline_mode bash --input_pod5 /data/pod5 \
+     --ref_genome /data/genome.fa --output_path /data/run1 --output_name sample1 --device GPU && bash /data/run1/run.pbs"
+```
+
+## Usage (RNA004)
+
+```
+python generate_script.py rna004 --help
+```
+Required: `--input_pod5` (pod5 file or directory), `--ref_genome`, `--output_path`, `--output_name`, `--device {CPU,GPU}`.
+By default the pipeline basecalls the pod5 with Dorado (`--dorado_bin`, `--dorado_model`, `--dorado_device`, `--threads_basecall`);
+to reuse existing basecalls give `--input_bam` (Dorado BAM produced with `--emit-moves`; **`--emit-fastq` output cannot be used**,
+it drops the move tags) or `--input_fastq` (FASTQ made with `samtools fastq -T "mv,ts,pi,sp,ns" dorado.bam`).
+
+Useful options: `--ref_candidate_sites` (REDItools-style table; candidate sites are labelled with their bulk editing ratio and written
+to a separate feature file, both candidate and non-candidate A sites are predicted), `--num_split` (number of contig groups processed in
+parallel, default 24), `--threads_extract`, `--threads_predict`, `--batch_size`, `--slurm_gpu_args` (sbatch options added to the
+basecalling and prediction jobs in cluster mode when `--device GPU`, default `--gpus-per-node=1`), `--conda_env`, and the same
+site-level filtering/annotation options as the RNA002 pipeline (`--ref_alu`, `--ref_snp`, `--ref_REDIportal`, `--filter_snp`,
+`--filter_m6A`, `--coverage_cutoff`, `--ratio_cutoff`, ...).
+
+`generate_script.py rna004` writes `run.pbs` and `config.yaml` into `--output_path`; run `bash run.pbs` (`--pipeline_mode bash`) or
+`sbatch run.pbs` (`--pipeline_mode cluster`). Pipeline steps:
+
+1. `dorado basecaller <model> pod5/ --emit-moves` (skipped when `--input_bam`/`--input_fastq` is given).
+2. `samtools fastq -T` keeps the Dorado tags, `minimap2 -y -ax splice -uf -k14 --secondary=no` aligns to the genome, primary alignments are kept (`igv/{name}.genome.sorted.bam`).
+3. The BAM is split into contig groups; each group is processed by `uncalled4 align --redd-out` (17-base windows around every reference A) into `intermediates/cache/{name}.{group}[.candidate|.noncandidate].hdf5`.
+4. `scripts/rna004/predict.py` computes the per-read editing probability of every window (`intermediates/cache/{name}.{group}.prediction.raw.txt`). Predictions are per read and per window, so the split into groups does not change any value.
+5. Molecule-level results are merged into **`outputs/{name}.prediction.genome.txt`**
+   (`label  read_id  contig  position(1-based)  strand  probability`; label is `I:<ratio>` for candidate sites and `I` otherwise),
+   site-level results into **`outputs/{name}.site.bed`** (before filtering) and **`outputs/{name}.flt.genome.tab`** (after filtering/annotation),
+   and the visualization pre-computation into `outputs/precomputed_visualization/{name}/`, exactly as for the RNA002 genome pipeline.
+
+## Test run (RNA004)
+
+[test_data/rna004/](test_data/rna004/) contains a small set of HEK293T-WT RNA004 reads as MinKNOW pod5 (plus the same reads as a
+Dorado BAM with move tags), a 360 kb reference (`chr11_sub` = hg38 chr11:600,001-960,000) and the matching candidate sites.
+With the environment activated and Dorado installed:
+```
+bash test_data/rna004/run_test.sh [output_dir] [CPU|GPU] [pod5|bam]
+```
+`pod5` (default) runs the full pipeline including Dorado basecalling; `bam` starts from the provided basecalls. Outputs land in
+`output_dir/outputs/`: `HEK293T-WT_chr11_sub.prediction.genome.txt` (178,594 read x A-site predictions), `.site.bed` (2,845 sites
+with coverage >= 5), `.flt.genome.tab` (1,083 sites after filtering) and `precomputed_visualization/`. On 8 CPU threads the `bam` mode
+takes ~40 min (uncalled4 extraction ~30 s, model inference ~37 min); on a GPU inference takes seconds. The `pod5` mode adds Dorado
+`sup` basecalling of the 600 reads (~26 min and ~28 GB RAM on 8 CPU threads; seconds on a GPU) and gives 178,029 predictions /
+2,823 sites / 1,068 filtered sites — slightly different from the `bam` mode because CPU and GPU basecalls of the same reads differ.
 
 # RNA002 support
 ## Download and Installation
@@ -391,116 +501,7 @@ python generate_script.py genome \
 --ref_REDIportal ~/ReDD_data/REDIportal_hg38.txt 
 ```
 
-# RNA004 support
 
-ReDD now supports ONT **RNA004** direct RNA data (kit `SQK-RNA004`, flow cell `FLO-PRO004RA`, pod5 raw data, Dorado
-basecalling). RNA004 has its own workflow ([Snakefile_RNA004](Snakefile_RNA004)), its own conda environment
-([environment_rna004.yaml](environment_rna004.yaml)) and a new PyTorch model; the RNA002 pipeline described above is unchanged.
-
-## Installation (RNA004)
-
-```
-git clone https://github.com/Augroup/ReDD && cd ReDD
-conda env create -n ReDD_RNA004 --file environment_rna004.yaml   # run from the repository root
-conda activate ReDD_RNA004
-bash scripts/rna004/install_dorado.sh                            # Dorado 1.1.1 + rna004_130bps_sup@v5.2.0 -> software/dorado
-bash scripts/rna004/download_model.sh                            # RNA004 model weights -> scripts/models/rna004/general.pt
-```
-The environment build compiles and installs the vendored **uncalled4 ReDD fork** in [uncalled4_ReDD/](uncalled4_ReDD/) (source of the
-`--redd-out`, `--redd-candidate` and `--redd-window-size` options; see [uncalled4_ReDD/VENDORED_FROM.txt](uncalled4_ReDD/VENDORED_FROM.txt)).
-PyTorch 2.6.0 is installed from PyPI (runs on CPU and CUDA GPUs). `install_dorado.sh` downloads Dorado and the basecalling model
-from Oxford Nanopore into `software/dorado/` (Dorado has its own licence and is not stored in this repository); Dorado needs a GPU
-for realistic data sizes.
-
-**Model weights**: `scripts/models/rna004/general.pt` (652 MB) is not stored in git; download it before running the pipeline:
-```
-bash scripts/rna004/download_model.sh      # -> scripts/models/rna004/general.pt (from https://reddexamples.s3.us-east-2.amazonaws.com/RNA004/general.pt)
-```
-
-## Docker (RNA004)
-
-Ready-to-run images are published on Docker Hub as [`tidesun/redd-rna004`](https://hub.docker.com/r/tidesun/redd-rna004):
-
-| tag | torch build | use |
-|---|---|---|
-| `gpu` (= `latest`) | CUDA 12.4 wheel | NVIDIA GPU hosts (driver + [NVIDIA container toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/) needed); also runs on CPU |
-| `cpu` | CPU-only wheel (smaller) | hosts without a GPU |
-
-The image contains the pipeline code (`main` branch, at `/opt/ReDD`) and the `ReDD_RNA004` conda environment. Dorado, the basecalling
-model and the ReDD model weights (~8 GB) are downloaded inside the container by `redd-fetch-assets`; run it at the start of your
-command as below. Everything else in `generate_script.py rna004` then works with its default paths.
-
-```
-# your data: download assets, generate run.pbs/config.yaml, execute the pipeline
-docker run --rm --gpus all -v /path/on/host:/data tidesun/redd-rna004:gpu bash -c \
-  "redd-fetch-assets && \
-   python generate_script.py rna004 --pipeline_mode bash --input_pod5 /data/pod5 --ref_genome /data/genome.fa \
-     --output_path /data/run1 --output_name sample1 --device GPU && bash /data/run1/run.pbs"
-
-# smoke test on the bundled test data (600 HEK293T-WT reads, from pod5 including basecalling); the test data is not in the image
-git clone --depth 1 https://github.com/Augroup/ReDD.git
-docker run --rm --gpus all -v $PWD/ReDD/test_data:/opt/ReDD/test_data -v /path/on/host:/data tidesun/redd-rna004:gpu bash -c \
-  "redd-fetch-assets && bash test_data/rna004/run_test.sh /data/redd_test GPU"
-```
-Without a GPU use `tidesun/redd-rna004:cpu`, drop `--gpus all` and pass `--device CPU` (see the CPU notes below; Dorado on CPU is slow).
-Already-basecalled data can be given with `--input_bam /data/dorado.bam` (Dorado BAM with move tags) instead of basecalling inside the
-container. The assets are re-downloaded for every new container; to download them once and reuse them, add a volume:
-`docker volume create redd-assets` and `-v redd-assets:/opt/redd-assets` on every `docker run` (`redd-fetch-assets` skips files that
-are already present). `DORADO_VERSION`, `DORADO_MODEL` and `REDD_MODEL` (e.g. `-e DORADO_MODEL=rna004_130bps_hac@v5.2.0`) select other
-Dorado/model versions.
-
-With Apptainer/Singularity (e.g. on an HPC cluster; the container filesystem is read-only, so give the assets a host directory):
-```
-apptainer pull redd-rna004.sif docker://tidesun/redd-rna004:gpu
-mkdir -p redd-assets
-apptainer exec --nv -B redd-assets:/opt/redd-assets -B /path/on/host:/data redd-rna004.sif bash -c \
-  "redd-fetch-assets && cd /opt/ReDD && python generate_script.py rna004 --pipeline_mode bash --input_pod5 /data/pod5 \
-     --ref_genome /data/genome.fa --output_path /data/run1 --output_name sample1 --device GPU && bash /data/run1/run.pbs"
-```
-
-## Usage (RNA004)
-
-```
-python generate_script.py rna004 --help
-```
-Required: `--input_pod5` (pod5 file or directory), `--ref_genome`, `--output_path`, `--output_name`, `--device {CPU,GPU}`.
-By default the pipeline basecalls the pod5 with Dorado (`--dorado_bin`, `--dorado_model`, `--dorado_device`, `--threads_basecall`);
-to reuse existing basecalls give `--input_bam` (Dorado BAM produced with `--emit-moves`; **`--emit-fastq` output cannot be used**,
-it drops the move tags) or `--input_fastq` (FASTQ made with `samtools fastq -T "mv,ts,pi,sp,ns" dorado.bam`).
-
-Useful options: `--ref_candidate_sites` (REDItools-style table; candidate sites are labelled with their bulk editing ratio and written
-to a separate feature file, both candidate and non-candidate A sites are predicted), `--num_split` (number of contig groups processed in
-parallel, default 24), `--threads_extract`, `--threads_predict`, `--batch_size`, `--slurm_gpu_args` (sbatch options added to the
-basecalling and prediction jobs in cluster mode when `--device GPU`, default `--gpus-per-node=1`), `--conda_env`, and the same
-site-level filtering/annotation options as the RNA002 pipeline (`--ref_alu`, `--ref_snp`, `--ref_REDIportal`, `--filter_snp`,
-`--filter_m6A`, `--coverage_cutoff`, `--ratio_cutoff`, ...).
-
-`generate_script.py rna004` writes `run.pbs` and `config.yaml` into `--output_path`; run `bash run.pbs` (`--pipeline_mode bash`) or
-`sbatch run.pbs` (`--pipeline_mode cluster`). Pipeline steps:
-
-1. `dorado basecaller <model> pod5/ --emit-moves` (skipped when `--input_bam`/`--input_fastq` is given).
-2. `samtools fastq -T` keeps the Dorado tags, `minimap2 -y -ax splice -uf -k14 --secondary=no` aligns to the genome, primary alignments are kept (`igv/{name}.genome.sorted.bam`).
-3. The BAM is split into contig groups; each group is processed by `uncalled4 align --redd-out` (17-base windows around every reference A) into `intermediates/cache/{name}.{group}[.candidate|.noncandidate].hdf5`.
-4. `scripts/rna004/predict.py` computes the per-read editing probability of every window (`intermediates/cache/{name}.{group}.prediction.raw.txt`). Predictions are per read and per window, so the split into groups does not change any value.
-5. Molecule-level results are merged into **`outputs/{name}.prediction.genome.txt`**
-   (`label  read_id  contig  position(1-based)  strand  probability`; label is `I:<ratio>` for candidate sites and `I` otherwise),
-   site-level results into **`outputs/{name}.site.bed`** (before filtering) and **`outputs/{name}.flt.genome.tab`** (after filtering/annotation),
-   and the visualization pre-computation into `outputs/precomputed_visualization/{name}/`, exactly as for the RNA002 genome pipeline.
-
-## Test run (RNA004)
-
-[test_data/rna004/](test_data/rna004/) contains a small set of HEK293T-WT RNA004 reads as MinKNOW pod5 (plus the same reads as a
-Dorado BAM with move tags), a 360 kb reference (`chr11_sub` = hg38 chr11:600,001-960,000) and the matching candidate sites.
-With the environment activated and Dorado installed:
-```
-bash test_data/rna004/run_test.sh [output_dir] [CPU|GPU] [pod5|bam]
-```
-`pod5` (default) runs the full pipeline including Dorado basecalling; `bam` starts from the provided basecalls. Outputs land in
-`output_dir/outputs/`: `HEK293T-WT_chr11_sub.prediction.genome.txt` (178,594 read x A-site predictions), `.site.bed` (2,845 sites
-with coverage >= 5), `.flt.genome.tab` (1,083 sites after filtering) and `precomputed_visualization/`. On 8 CPU threads the `bam` mode
-takes ~40 min (uncalled4 extraction ~30 s, model inference ~37 min); on a GPU inference takes seconds. The `pod5` mode adds Dorado
-`sup` basecalling of the 600 reads (~26 min and ~28 GB RAM on 8 CPU threads; seconds on a GPU) and gives 178,029 predictions /
-2,823 sites / 1,068 filtered sites — slightly different from the `bam` mode because CPU and GPU basecalls of the same reads differ.
 
 ## Possible issues and solutions (to be continue)
 * After run generate_script.py, a **run.pbs**, and a **config.yaml** file will be generated in {output_path}.You can refere to run.pbs and config.yaml for details of the commands and configurations.
