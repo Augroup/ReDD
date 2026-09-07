@@ -426,9 +426,7 @@ bash scripts/rna004/download_model.sh      # -> scripts/models/rna004/general.pt
 
 ## Docker (RNA004)
 
-### Pre-built images (Docker Hub)
-
-Images are published as [`tidesun/redd-rna004`](https://hub.docker.com/r/tidesun/redd-rna004):
+Ready-to-run images are published on Docker Hub as [`tidesun/redd-rna004`](https://hub.docker.com/r/tidesun/redd-rna004):
 
 | tag | torch build | use |
 |---|---|---|
@@ -471,17 +469,6 @@ apptainer exec --nv -B redd-assets:/opt/redd-assets -B /path/on/host:/data redd-
   "cd /opt/ReDD && python generate_script.py rna004 --pipeline_mode bash --input_pod5 /data/pod5 --ref_genome /data/genome.fa \
      --output_path /data/run1 --output_name sample1 --device GPU && bash /data/run1/run.pbs"
 ```
-
-### Build your own image
-
-[Dockerfile](Dockerfile) builds a self-contained image (assets included, ~16 GB) from the **latest code of the `main` branch on GitHub** —
-it clones the repository during the build, nothing is copied from the local directory:
-```
-docker build -t redd-rna004 --build-arg CACHEBUST=$(date +%s) .     # CACHEBUST forces a fresh clone instead of a cached layer
-docker run --rm --gpus all -v /path/on/host:/data redd-rna004 bash test_data/rna004/run_test.sh /data/redd_test GPU
-```
-`--build-arg REDD_BRANCH=<branch or tag>` selects another revision. Torch and Dorado bring their own CUDA libraries, so the host only
-needs an NVIDIA driver and the NVIDIA container toolkit.
 
 ## Usage (RNA004)
 
