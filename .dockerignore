@@ -1,0 +1,17 @@
+.git
+.gitignore
+.snakemake
+__pycache__
+*.pyc
+software/
+scripts/models/rna004/*.pt
+uncalled4_ReDD/build
+uncalled4_ReDD/.eggs
+uncalled4_ReDD/*.egg-info
+test_data/rna004_results
+intermediates/
+outputs/
+depreciated/
+figures/
+reproduce_scripts/
+*.ipynb

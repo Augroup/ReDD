@@ -1,0 +1,40 @@
+# ReDD RNA004 environment.
+# Create from the repository root (the pip section installs the vendored uncalled4_ReDD fork):
+#   conda env create -n ReDD_RNA004 --file environment_rna004.yaml
+# Torch 2.6.0 is installed from PyPI (the version the RNA004 model was trained and validated with);
+# the default Linux wheel bundles CUDA 12 and also runs on CPU.
+name: ReDD_RNA004
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.11
+  - pip
+  - cxx-compiler          # builds the uncalled4 pybind11 extension
+  - zlib
+  - snakemake-minimal=7.32.4
+  - graphviz              # `dot` for dag.pdf
+  - minimap2>=2.26
+  - samtools>=1.18
+  - htslib>=1.18          # bgzip
+  - bedtools
+  - gawk
+  - perl
+  - numpy
+  - pandas
+  - scipy
+  - h5py>=3.14
+  - hdf5plugin
+  - pysam
+  - pybigwig
+  - pybind11
+  - toml
+  - plotly
+  - dash
+  - tblib
+  - pip:
+      - torch==2.6.0
+      - pod5
+      - pyslow5
+      - ont-fast5-api
+      - ./uncalled4_ReDD

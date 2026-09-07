@@ -1,0 +1,354 @@
+# ReDD pipeline for ONT RNA004 direct RNA sequencing (genome reference).
+#
+#   pod5 [-> dorado basecaller --emit-moves] (or a Dorado BAM / tagged FASTQ given directly)
+#     -> samtools fastq -T (keep mv/ts tags) -> minimap2 -y (splice) -> primary alignments only
+#     -> split BAM by reference contig groups
+#     -> uncalled4 align --redd-out            (signal features per read x A-site, HDF5)
+#     -> scripts/rna004/predict.py             (molecule-level A-to-I probability, torch)
+#     -> merge -> site level -> filtering / annotation -> visualization pre-compute
+#
+# config.yaml is written by `python generate_script.py rna004 ...`.
+
+import os
+
+configfile: "config.yaml"
+
+SAMPLE = config['sample']
+REGION_GROUPS = config['region_groups']          # {group_name: [contig, ...]}
+GROUPS = sorted(REGION_GROUPS.keys())
+HAS_CANDIDATE = bool(config['has_candidate'])
+EMPTY = config['empty_file']
+
+wildcard_constraints:
+    sample=SAMPLE,
+    group="|".join(GROUPS)
+
+rule all:
+    input:
+        f"outputs/{SAMPLE}.prediction.genome.txt",
+        f"outputs/{SAMPLE}.site.bed",
+        f"outputs/{SAMPLE}.flt.genome.tab",
+        f"igv/{SAMPLE}.genome.sorted.bam.bai",
+        f"outputs/precomputed_visualization/{SAMPLE}/",
+
+# --------------------------------------------------------------------------------------
+# Reads: collect basecalled reads into one bgzipped FASTQ that carries the basecaller
+# move tags (mv, ts, ...) in the read header so minimap2 -y can propagate them to the BAM.
+# --------------------------------------------------------------------------------------
+def collect_input_files(path, exts):
+    if os.path.isdir(path):
+        found = []
+        for root, _, files in os.walk(path):
+            for f in sorted(files):
+                if f.endswith(exts):
+                    found.append(os.path.join(root, f))
+        if not found:
+            raise ValueError(f"no {exts} files found under {path}")
+        return found
+    return [path]
+
+if config['input_type'] == 'pod5':
+    # Basecall with Dorado; --emit-moves is mandatory (uncalled4 aligns the signal along the move table).
+    rule basecall:
+        input:
+            config['input_pod5']
+        output:
+            "intermediates/basecalled/{sample}.dorado.bam"
+        params:
+            dorado=config['dorado_bin'],
+            model=config['dorado_model'],
+            device=config['dorado_device'],
+            mod_models=("--modified-bases-models " + config['dorado_mod_models']) if config['dorado_mod_models'] else "",
+            batchsize=("--batchsize %d" % int(config['dorado_batchsize'])) if int(config.get('dorado_batchsize', 0)) > 0 else "",
+            recursive="-r" if os.path.isdir(config['input_pod5']) else "",
+        threads: config['threads_basecall']
+        resources:
+            runtime=96 * 60,
+            mem_mb=64 * 1024,
+            slurm_extra=config['slurm_gpu_args'] if config['device'] == 'GPU' else "",
+        benchmark:
+            "intermediates/basecalled/{sample}.dorado.benchmark.tsv"
+        shell:
+            "{params.dorado} basecaller {params.model} {input} {params.recursive} --emit-moves -x {params.device} {params.batchsize} {params.mod_models} > {output}"
+
+if config['input_type'] in ('bam', 'pod5'):
+    rule collect_reads:
+        input:
+            "intermediates/basecalled/{sample}.dorado.bam" if config['input_type'] == 'pod5' else config['input_reads']
+        output:
+            "intermediates/fastq/{sample}.fastq.gz"
+        threads: 4
+        resources:
+            runtime=4 * 60,
+            mem_mb=4 * 1024,
+        run:
+            bams = collect_input_files(str(input[0]), ('.bam',))
+            # -F 0x900: drop secondary/supplementary records if the input BAM happens to be aligned
+            cmds = [f"samtools fastq -@ {threads} -F 0x900 -T 'mv,ts,pi,sp,ns,MN,MM,ML' {b}" for b in bams]
+            shell("(" + " && ".join(cmds) + f") | bgzip -@ {threads} > {output}")
+else:
+    rule collect_reads:
+        input:
+            config['input_reads']
+        output:
+            "intermediates/fastq/{sample}.fastq.gz"
+        threads: 4
+        resources:
+            runtime=4 * 60,
+            mem_mb=4 * 1024,
+        run:
+            fqs = collect_input_files(config['input_reads'], ('.fastq', '.fq', '.fastq.gz', '.fq.gz', '.fastq.bgz'))
+            shell("zcat -f " + " ".join(fqs) + f" | bgzip -@ {threads} > {output}")
+
+rule reference_index:
+    input:
+        ref_genome="intermediates/reference/genome.fa",
+    output:
+        "intermediates/reference/genome.fa.fai",
+    threads: 1
+    resources:
+        runtime=60,
+        mem_mb=1024,
+    shell:
+        "samtools faidx {input.ref_genome}"
+
+rule minimap2_genome:
+    input:
+        ref_genome="intermediates/reference/genome.fa",
+        ref_genome_index="intermediates/reference/genome.fa.fai",
+        fastq="intermediates/fastq/{sample}.fastq.gz",
+    output:
+        sorted_bam="igv/{sample}.genome.sorted.bam",
+        sorted_bam_bai="igv/{sample}.genome.sorted.bam.bai",
+    threads: 8
+    resources:
+        runtime=12 * 60,
+        mem_mb=8 * 4 * 1024,
+    shell:
+        # -y copies the FASTQ header tags (mv, ts, ...) into the SAM record; uncalled4 needs them.
+        # -F 2308: keep primary alignments of mapped reads only.
+        """
+        minimap2 -y -ax splice -uf -k14 --secondary=no -t {threads} {input.ref_genome} {input.fastq} \
+            | samtools view -h -F 2308 - \
+            | samtools sort -@ {threads} -m 1500M -o {output.sorted_bam} -
+        samtools index -@ {threads} {output.sorted_bam}
+        """
+
+# --------------------------------------------------------------------------------------
+# Signal index: read_id -> pod5 file. Built once, shared by all extraction jobs.
+# --------------------------------------------------------------------------------------
+rule index_reads:
+    input:
+        config['input_pod5']
+    output:
+        "intermediates/reads/{sample}.read_index.txt"
+    threads: 1
+    resources:
+        runtime=4 * 60,
+        mem_mb=4 * 1024,
+    shell:
+        "python scripts/rna004/build_read_index.py -r {input} -o {output}"
+
+# --------------------------------------------------------------------------------------
+# Split alignments by contig group for parallel feature extraction.
+# --------------------------------------------------------------------------------------
+rule split_bam:
+    input:
+        bam="igv/{sample}.genome.sorted.bam",
+        bai="igv/{sample}.genome.sorted.bam.bai",
+    output:
+        bam="intermediates/mapped_reads/{sample}.{group}.bam",
+        bai="intermediates/mapped_reads/{sample}.{group}.bam.bai",
+    params:
+        contigs=lambda wildcards: " ".join(f"'{c}'" for c in REGION_GROUPS[wildcards.group]),
+    threads: 2
+    resources:
+        runtime=2 * 60,
+        mem_mb=4 * 1024,
+    shell:
+        """
+        samtools view -@ {threads} -b -o {output.bam} {input.bam} {params.contigs}
+        samtools index -@ {threads} {output.bam}
+        """
+
+# --------------------------------------------------------------------------------------
+# Feature extraction with the ReDD fork of uncalled4.
+# Writes <prefix>.hdf5, or <prefix>.candidate.hdf5 + <prefix>.noncandidate.hdf5 when a
+# candidate site table is given (candidate sites carry their bulk editing ratio as label).
+# --------------------------------------------------------------------------------------
+def extract_outputs(prefix):
+    if HAS_CANDIDATE:
+        return {"candidate": prefix + ".candidate.hdf5", "noncandidate": prefix + ".noncandidate.hdf5"}
+    return {"features": prefix + ".hdf5"}
+
+rule extract_signals:
+    input:
+        bam="intermediates/mapped_reads/{sample}.{group}.bam",
+        bai="intermediates/mapped_reads/{sample}.{group}.bam.bai",
+        ref_genome="intermediates/reference/genome.fa",
+        ref_genome_index="intermediates/reference/genome.fa.fai",
+        read_index="intermediates/reads/{sample}.read_index.txt",
+        pod5=config['input_pod5'],
+    output:
+        **extract_outputs("intermediates/cache/{sample}.{group}")
+    params:
+        prefix="intermediates/cache/{sample}.{group}",
+        window_size=config['window_size'],
+        flowcell=config['flowcell'],
+        kit=config['kit'],
+        bam_chunksize=config['bam_chunksize'],
+        candidate=("--redd-candidate " + config['ref_candidate_sites_file']) if HAS_CANDIDATE else "",
+    threads: config['threads_extract']
+    resources:
+        runtime=48 * 60,
+        mem_mb=config['threads_extract'] * 8 * 1024,
+    benchmark:
+        "intermediates/cache/{sample}.{group}.extract.benchmark.tsv"
+    shell:
+        """
+        uncalled4 align --ref {input.ref_genome} --reads {input.pod5} -r -x {input.read_index} \
+            --bam-in {input.bam} --redd-out {params.prefix} --redd-window-size {params.window_size} \
+            --flowcell {params.flowcell} --kit {params.kit} --bam-chunksize {params.bam_chunksize} \
+            -p {threads} {params.candidate}
+        """
+
+# --------------------------------------------------------------------------------------
+# Molecule-level prediction.
+# --------------------------------------------------------------------------------------
+rule predict:
+    input:
+        **extract_outputs("intermediates/cache/{sample}.{group}")
+    output:
+        "intermediates/cache/{sample}.{group}.prediction.raw.txt"
+    params:
+        device=config['device'],
+        batch_size=config['batch_size'],
+        model=config['model_path'],
+    threads: config['threads_predict']
+    resources:
+        runtime=24 * 60,
+        mem_mb=config['threads_predict'] * 6 * 1024,
+        slurm_extra=config['slurm_gpu_args'] if config['device'] == 'GPU' else "",
+    benchmark:
+        "intermediates/cache/{sample}.{group}.prediction.benchmark.tsv"
+    shell:
+        """
+        python scripts/rna004/predict.py --checkpoint {params.model} --input {input} --output {output} \
+            --device {params.device} --batch_size {params.batch_size} --threads {threads} --verbose 0
+        """
+
+rule merge_predicts:
+    input:
+        expand("intermediates/cache/{{sample}}.{group}.prediction.raw.txt", group=GROUPS)
+    output:
+        "outputs/{sample}.prediction.genome.txt"
+    threads: 1
+    resources:
+        runtime=60,
+        mem_mb=1024,
+    shell:
+        "cat {input} > {output}"
+
+# --------------------------------------------------------------------------------------
+# Site level (shared with the RNA002 pipeline).
+# --------------------------------------------------------------------------------------
+rule generate_site_level_results:
+    input:
+        "outputs/{sample}.prediction.genome.txt"
+    output:
+        "outputs/{sample}.site.bed"
+    params:
+        coverage_cutoff=config['coverage_cutoff'],
+        ratio_cutoff=0,
+    threads: 8
+    resources:
+        runtime=12 * 60,
+        mem_mb=8 * 6 * 1024,
+    shell:
+        "python scripts/generate_sitelev_info.py --input {input} --output {output} --threads {threads} "
+        "--cov_cutoff {params.coverage_cutoff} --ratio_cutoff {params.ratio_cutoff} --mod_cov_cutoff 0"
+
+rule create_cdna2genome_bed:
+    output:
+        cdna2genome_tab="intermediates/reference/gencode.v31.annotation.cdna2genome.tab",
+    threads: 1
+    resources:
+        runtime=1,
+        mem_mb=1024,
+    shell:
+        "touch {output.cdna2genome_tab}"
+
+if str(config['filter_m6A']) == 'True' or str(config['add_m6A_reference']) == 'True':
+    rule create_m6A_motif:
+        input:
+            ref_genome="intermediates/reference/genome.fa"
+        output:
+            m6A_motif_bed="intermediates/reference/analysis_extract_m6A_motif.bed"
+        threads: 1
+        resources:
+            runtime=60,
+            mem_mb=1024,
+        shell:
+            "sh scripts/create_m6A_motif.sh {input.ref_genome} {output.m6A_motif_bed}"
+else:
+    rule create_m6A_motif:
+        output:
+            m6A_motif_bed="intermediates/reference/analysis_extract_m6A_motif.bed"
+        threads: 1
+        resources:
+            runtime=1,
+            mem_mb=1024,
+        shell:
+            "touch {output.m6A_motif_bed}"
+
+rule site_filtering:
+    input:
+        site_bed="outputs/{sample}.site.bed",
+        alu_bed=config['ref_alu_file'],
+        snp_bed=config['ref_snp_file'],
+        m6A_motif_bed="intermediates/reference/analysis_extract_m6A_motif.bed",
+        REDI_txt=config['ref_REDIportal_file'],
+    output:
+        temp_bed_1="outputs/{sample}-1.bed",
+        temp_bed_2="outputs/{sample}-2.bed",
+        site_tab="outputs/{sample}.flt.genome.tab",
+    params:
+        filter_snp=config['filter_snp'],
+        filter_m6A=config['filter_m6A'],
+        in_alu_coverage=config['in_alu_coverage'],
+        out_alu_coverage=config['out_alu_coverage'],
+        in_alu_ratio=config['in_alu_ratio'],
+        out_alu_ratio=config['out_alu_ratio'],
+        coverage_cutoff=config['coverage_cutoff'],
+        ratio_cutoff=config['ratio_cutoff'],
+    threads: 4
+    resources:
+        runtime=60,
+        mem_mb=6 * 1024,
+    shell:
+        "sh scripts/genome_site_filtering.sh {input.site_bed} {input.alu_bed} {input.snp_bed} {input.m6A_motif_bed} "
+        "{input.REDI_txt} {output.temp_bed_1} {output.temp_bed_2} {output.site_tab} {params.filter_snp} "
+        "{params.filter_m6A} {params.in_alu_coverage} {params.out_alu_coverage} {params.in_alu_ratio} "
+        "{params.out_alu_ratio} {params.coverage_cutoff} {params.ratio_cutoff}"
+
+rule pre_compute_visualization:
+    input:
+        site_tab="outputs/{sample}.flt.genome.tab",
+        mole_level_bed="outputs/{sample}.prediction.genome.txt",
+        ref="intermediates/reference/genome.fa",
+        candidate_sites=config['ref_candidate_sites_file'],
+        annotation_gpd=config['ref_annotation_file'],
+        sorted_bam="igv/{sample}.genome.sorted.bam",
+        sorted_bam_bai="igv/{sample}.genome.sorted.bam.bai",
+    output:
+        directory("outputs/precomputed_visualization/{sample}/")
+    params:
+        reference_type="genome",
+    threads: 8
+    resources:
+        runtime=12 * 60,
+        mem_mb=8 * 5 * 1024,
+    shell:
+        "python scripts/prep_visualization.py --annotation {input.annotation_gpd} --candidate_sites {input.candidate_sites} "
+        "--site_level_bed {input.site_tab} --mole_level_bed {input.mole_level_bed} --reference_type {params.reference_type} "
+        "-ref {input.ref} -o {output} -t {threads}"

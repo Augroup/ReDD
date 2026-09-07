@@ -306,7 +306,7 @@ def pre_compute_site_level_thres(output_dir,header,sitelevel_df,candidate_df):
             chroms = candidate_sitelevel_df['rname'].values
             starts = np.array(candidate_sitelevel_df['start'].values, dtype=np.int64)
             ends = np.array(candidate_sitelevel_df['end'], dtype=np.int64)
-            score = np.round(np.array(candidate_sitelevel_df['cov_score'], dtype=np.float),4)
+            score = np.round(np.array(candidate_sitelevel_df['cov_score'], dtype=float),4)
             if len(chroms.tolist()) != 0:
                 bw.addEntries(chroms.tolist(), starts.tolist(), ends=ends.tolist(), values=score.tolist(),validate=True)
 
@@ -322,7 +322,7 @@ def pre_compute_site_level_thres(output_dir,header,sitelevel_df,candidate_df):
             chroms = non_candidate_sitelevel_df['rname'].values
             starts = np.array(non_candidate_sitelevel_df['start'].values, dtype=np.int64)
             ends = np.array(non_candidate_sitelevel_df['end'], dtype=np.int64)
-            score = np.round(np.array(non_candidate_sitelevel_df['cov_score'], dtype=np.float),4)
+            score = np.round(np.array(non_candidate_sitelevel_df['cov_score'], dtype=float),4)
             if len(chroms.tolist()) != 0:
                 bw.addEntries(chroms.tolist(), starts.tolist(), ends=ends.tolist(), values=score.tolist(),validate=True)
 
@@ -351,7 +351,7 @@ def pre_compute_site_level_thres(output_dir,header,sitelevel_df,candidate_df):
         chroms = not_pass_sitelevel_df['rname'].values
         starts = np.array(not_pass_sitelevel_df['start'].values, dtype=np.int64)
         ends = np.array(not_pass_sitelevel_df['end'], dtype=np.int64)
-        score = np.round(np.array(not_pass_sitelevel_df['cov_score'], dtype=np.float),4)
+        score = np.round(np.array(not_pass_sitelevel_df['cov_score'], dtype=float),4)
         if len(chroms.tolist()) > 0:
             bw.addEntries(chroms.tolist(), starts.tolist(), ends=ends.tolist(), values=score.tolist(),validate=True)
 
@@ -363,7 +363,7 @@ def pre_compute_site_level_thres(output_dir,header,sitelevel_df,candidate_df):
     chroms = sitelevel_df['rname'].values
     starts = np.array(sitelevel_df['start'].values, dtype=np.int64)
     ends = np.array(sitelevel_df['end'], dtype=np.int64)
-    num_reads = np.array(sitelevel_df['methyl_cov'], dtype=np.float)
+    num_reads = np.array(sitelevel_df['methyl_cov'], dtype=float)
     if len(chroms.tolist()) != 0:
         bw.addEntries(chroms.tolist(), starts.tolist(), ends=ends.tolist(), values=num_reads.tolist(),validate=True)
     bw.close()
@@ -373,7 +373,7 @@ def pre_compute_site_level_thres(output_dir,header,sitelevel_df,candidate_df):
     chroms = sitelevel_df['rname'].values
     starts = np.array(sitelevel_df['start'].values, dtype=np.int64)
     ends = np.array(sitelevel_df['end'], dtype=np.int64)
-    num_reads = np.array(sitelevel_df['cov'], dtype=np.float)
+    num_reads = np.array(sitelevel_df['cov'], dtype=float)
     if len(chroms.tolist()) != 0:
         bw.addEntries(chroms.tolist(), starts.tolist(), ends=ends.tolist(), values=num_reads.tolist(),validate=True)
     bw.close()

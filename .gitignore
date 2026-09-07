@@ -136,3 +136,9 @@ dmypy.json
 .pyre/
 
 
+
+# RNA004 model weights (too large for git; see README)
+scripts/models/rna004/*.pt
+
+# Dorado install (scripts/rna004/install_dorado.sh)
+software/

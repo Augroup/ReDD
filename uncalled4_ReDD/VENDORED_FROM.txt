@@ -1,0 +1,3 @@
+Vendored from https://github.com/Tidesun/uncalled4_ReDD
+commit 3325bd4b31c18ede62bdd4aa241d533c0acf3a45 (2025-10-23)
+Modified fork of uncalled4 (https://github.com/skovaka/uncalled4) adding `--redd-out`, `--redd-candidate`, `--redd-window-size` for ReDD RNA004 feature extraction.
