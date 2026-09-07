@@ -40,6 +40,10 @@ RUN bash scripts/rna004/install_dorado.sh \
 ENV PATH=/opt/conda/envs/ReDD_RNA004/bin:/opt/ReDD/software/dorado/bin:$PATH \
     CONDA_DEFAULT_ENV=ReDD_RNA004 \
     CONDA_PREFIX=/opt/conda/envs/ReDD_RNA004
-RUN echo 'source /opt/conda/etc/profile.d/conda.sh && conda activate ReDD_RNA004' > /etc/profile.d/redd.sh
+# Named zz-* so it is sourced after the base image's conda.sh, and exports PATH directly
+# rather than calling `conda activate` (which is a no-op here because CONDA_PREFIX /
+# CONDA_DEFAULT_ENV are already set above, leaving `bash -l` on the base environment).
+RUN printf '%s\n' 'export PATH=/opt/conda/envs/ReDD_RNA004/bin:/opt/ReDD/software/dorado/bin:$PATH' \
+    > /etc/profile.d/zz-redd.sh
 
 CMD ["bash"]
