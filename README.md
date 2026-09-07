@@ -2,7 +2,7 @@
 * ReDD: **R**NA **e**diting detection by **D**irect RNA sequencing and **D**eep learning
 * [Argo-ReDD](https://redd-portal.me): a **cloud-based platform** to run ReDD online without the need to prepare a computing environment.
 * This repository contains code and tutorials to run ReDD.
-* **RNA004 data** (pod5 + Dorado) is supported through a separate workflow, see [RNA004 support](#rna004-support).
+* **RNA004 data** (pod5 + Dorado) is supported through a separate workflow, see [RNA004 support](#rna004-support); pre-built Docker images: [`tidesun/redd-rna004`](https://hub.docker.com/r/tidesun/redd-rna004).
 * The code to reproduce figures and results in the manuscript is deposited in `reproduce_scripts` folder.
 ## Getting started
 **Besides running ReDD locally, we also provides [Argo-ReDD](https://redd-portal.me): a **cloud-based platform** to run ReDD online without the need to prepare a computing environment.**
@@ -424,23 +424,64 @@ for realistic data sizes.
 bash scripts/rna004/download_model.sh      # -> scripts/models/rna004/general.pt (from https://reddexamples.s3.us-east-2.amazonaws.com/RNA004/general.pt)
 ```
 
-## Docker image (RNA004)
+## Docker (RNA004)
 
-[Dockerfile](Dockerfile) builds a self-contained image from the **latest code of the `main` branch on GitHub** (it clones the
-repository during the build; nothing is copied from the local directory) with the conda environment, the uncalled4 ReDD fork,
-Dorado 1.1.1 + `rna004_130bps_sup@v5.2.0`, the RNA004 model weights and the test data:
+### Pre-built images (Docker Hub)
+
+Images are published as [`tidesun/redd-rna004`](https://hub.docker.com/r/tidesun/redd-rna004):
+
+| tag | torch build | use |
+|---|---|---|
+| `gpu` (= `latest`) | CUDA 12.4 wheel | NVIDIA GPU hosts (driver + [NVIDIA container toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/) needed); also runs on CPU |
+| `cpu` | CPU-only wheel (smaller) | hosts without a GPU |
+
+The image contains the pipeline code (`main` branch, at `/opt/ReDD`) and the `ReDD_RNA004` conda environment. To keep it small,
+**Dorado, the basecalling model and the ReDD model weights (~8 GB) are not inside the image**: they live in a volume mounted at
+`/opt/redd-assets` and are downloaded once with `redd-fetch-assets` (`/opt/ReDD/software` and `/opt/ReDD/scripts/models/rna004` are
+symlinks into that volume, so all default paths of `generate_script.py rna004` work unchanged). The test data is not in the image either;
+mount it from a clone of the repository.
+
 ```
-docker build -t redd-rna004 --build-arg CACHEBUST=$(date +%s) .     # CACHEBUST forces a fresh clone instead of a cached layer
-# smoke test (use CPU and drop --gpus all on a machine without a GPU)
-docker run --rm --gpus all -v /path/on/host:/data redd-rna004 bash test_data/rna004/run_test.sh /data/redd_test GPU
-# a real run: generate run.pbs/config.yaml for your data, then execute it
-docker run --rm --gpus all -v /path/on/host:/data redd-rna004 bash -c \
+# 1. one-time: download Dorado 1.1.1 + rna004_130bps_sup@v5.2.0 + general.pt into a persistent volume
+docker volume create redd-assets
+docker run --rm -v redd-assets:/opt/redd-assets tidesun/redd-rna004:gpu redd-fetch-assets
+
+# 2. smoke test on the bundled test data (600 HEK293T-WT reads), from pod5 including basecalling
+git clone --depth 1 https://github.com/Augroup/ReDD.git
+docker run --rm --gpus all -v redd-assets:/opt/redd-assets \
+    -v $PWD/ReDD/test_data:/opt/ReDD/test_data -v /path/on/host:/data \
+    tidesun/redd-rna004:gpu bash test_data/rna004/run_test.sh /data/redd_test GPU
+
+# 3. your data: generate run.pbs/config.yaml, then execute it
+docker run --rm --gpus all -v redd-assets:/opt/redd-assets -v /path/on/host:/data tidesun/redd-rna004:gpu bash -c \
   "python generate_script.py rna004 --pipeline_mode bash --input_pod5 /data/pod5 --ref_genome /data/genome.fa \
      --output_path /data/run1 --output_name sample1 --device GPU && bash /data/run1/run.pbs"
 ```
-`--build-arg REDD_BRANCH=<branch or tag>` selects another revision. Torch and Dorado bring their own CUDA libraries, so the host
-only needs an NVIDIA driver and the NVIDIA container toolkit. The image also works with Apptainer/Singularity
-(`apptainer build redd-rna004.sif docker-daemon://redd-rna004:latest`, then `apptainer exec --nv redd-rna004.sif ...`).
+Without a GPU use `tidesun/redd-rna004:cpu`, drop `--gpus all` and pass `--device CPU` (see the CPU notes below; Dorado on CPU is slow).
+`redd-fetch-assets` honours `DORADO_VERSION`, `DORADO_MODEL` and `REDD_MODEL` (e.g. `-e DORADO_MODEL=rna004_130bps_hac@v5.2.0`) and is safe
+to re-run; the container prints a reminder at start-up if the assets are missing. Already-basecalled data can be given with
+`--input_bam /data/dorado.bam` (Dorado BAM with move tags) instead of basecalling inside the container.
+
+With Apptainer/Singularity (e.g. on an HPC cluster):
+```
+apptainer pull redd-rna004.sif docker://tidesun/redd-rna004:gpu
+mkdir -p redd-assets
+apptainer exec -B redd-assets:/opt/redd-assets redd-rna004.sif redd-fetch-assets
+apptainer exec --nv -B redd-assets:/opt/redd-assets -B /path/on/host:/data redd-rna004.sif bash -c \
+  "cd /opt/ReDD && python generate_script.py rna004 --pipeline_mode bash --input_pod5 /data/pod5 --ref_genome /data/genome.fa \
+     --output_path /data/run1 --output_name sample1 --device GPU && bash /data/run1/run.pbs"
+```
+
+### Build your own image
+
+[Dockerfile](Dockerfile) builds a self-contained image (assets included, ~16 GB) from the **latest code of the `main` branch on GitHub** —
+it clones the repository during the build, nothing is copied from the local directory:
+```
+docker build -t redd-rna004 --build-arg CACHEBUST=$(date +%s) .     # CACHEBUST forces a fresh clone instead of a cached layer
+docker run --rm --gpus all -v /path/on/host:/data redd-rna004 bash test_data/rna004/run_test.sh /data/redd_test GPU
+```
+`--build-arg REDD_BRANCH=<branch or tag>` selects another revision. Torch and Dorado bring their own CUDA libraries, so the host only
+needs an NVIDIA driver and the NVIDIA container toolkit.
 
 ## Usage (RNA004)
 
