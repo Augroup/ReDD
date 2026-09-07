@@ -4,9 +4,11 @@
 * This repository contains code and tutorials to run ReDD.
 * **RNA004 data** (pod5 + Dorado) is supported through a separate workflow, see [RNA004 support](#rna004-support); pre-built Docker images: [`tidesun/redd-rna004`](https://hub.docker.com/r/tidesun/redd-rna004).
 * The code to reproduce figures and results in the manuscript is deposited in `reproduce_scripts` folder.
-## Getting started
+# Getting started
 **Besides running ReDD locally, we also provides [Argo-ReDD](https://redd-portal.me): a **cloud-based platform** to run ReDD online without the need to prepare a computing environment.**
-#### Download and Installation
+
+# RNA002 support
+## Download and Installation
 The following comand and pipeline has been tested in the following Linux systems:
 * Red Hat Enterprise Linux Server release 7.9 (Maipo)
 *  Ubuntu 20.04.3 LTS
@@ -32,7 +34,7 @@ Before running ReDD activate the ReDD environment first
 conda activate ReDD
 ```
 
-# Usage
+## Usage
 
 ReDD pipeline is supported by Snakemake, refer to  [snakemake](https://snakemake.readthedocs.io/en/stable/).   for more information of Snakemake. (todo). The whole pipeline can be found in the snakefile under the ReDD-main directory.
 We used script generate_script.py to generate the config.yaml file and shell file, run.pbs, for users to run ReDD in a Slurm cluster or bash. You need to set parameter --pipeline_mode to either 'cluster' or 'bash'.
@@ -394,15 +396,6 @@ python generate_script.py genome \
 ReDD now supports ONT **RNA004** direct RNA data (kit `SQK-RNA004`, flow cell `FLO-PRO004RA`, pod5 raw data, Dorado
 basecalling). RNA004 has its own workflow ([Snakefile_RNA004](Snakefile_RNA004)), its own conda environment
 ([environment_rna004.yaml](environment_rna004.yaml)) and a new PyTorch model; the RNA002 pipeline described above is unchanged.
-
-| | RNA002 (original) | RNA004 (new) |
-|---|---|---|
-| raw signal | fast5 | pod5 |
-| basecalling | Guppy (done beforehand) | Dorado, part of the pipeline (`--emit-moves`); an existing Dorado BAM can be given instead |
-| signal-to-reference alignment | nanopolish eventalign | [uncalled4 (ReDD fork)](uncalled4_ReDD/) `align --redd-out` |
-| features | 9-base windows, 5 features/base | 17-base windows, 5 features/base (mean, sd, dwell, skewness, kurtosis) |
-| model | Keras/TensorFlow 1 | PyTorch (`scripts/rna004/model.py`, checkpoint `scripts/models/rna004/general.pt`) |
-| reference | genome or transcriptome | genome |
 
 ## Installation (RNA004)
 
