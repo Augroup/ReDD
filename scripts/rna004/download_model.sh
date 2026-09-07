@@ -10,6 +10,6 @@ URL=https://reddexamples.s3.us-east-2.amazonaws.com/RNA004/$MODEL.pt
 echo "Downloading $URL"
 curl -L -o "$DEST/$MODEL.pt" "$URL"
 if [ -f "$DEST/$MODEL.pt.sha256" ]; then
-    (cd "$DEST" && sha256sum -c "$MODEL.pt.sha256")
+    (cd "$REPO" && sha256sum -c "scripts/models/rna004/$MODEL.pt.sha256")
 fi
 echo "Saved to $DEST/$MODEL.pt"
