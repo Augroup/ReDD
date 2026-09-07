@@ -505,6 +505,10 @@ site-level filtering/annotation options as the RNA002 pipeline (`--ref_alu`, `--
   keeps the PyTorch defaults so GPU runs reproduce the published model outputs.
 * Dorado 1.1.1 cannot open pod5 files written by pod5 library ≥ 0.3.30 (read table v6); MinKNOW output is fine, but if you subset
   or convert pod5 files yourself use `pod5 <= 0.3.28`.
+* **Blackwell and newer GPUs (compute capability sm_120: RTX 50-series, RTX PRO 6000, B100/B200)**: the validated `torch==2.6.0`
+  build has no kernels for them, so `predict.py` detects this and falls back to CPU with a warning (`--force_gpu` overrides). To predict on
+  such a GPU, create the environment from [environment_rna004_cu128.yaml](environment_rna004_cu128.yaml) (torch 2.7.1+cu128) instead;
+  probabilities may then differ from the published torch-2.6.0 outputs at the ~1e-3 level. Dorado is unaffected (it bundles its own CUDA).
 * Dorado basecalling is meant for GPUs. On CPU the pipeline passes `--batchsize 8` (override with `--dorado_batchsize`): with
   Dorado's automatic batch size the `sup` model needs more than 64 GB of RAM. As a reference, 278 reads take ~12 min / 26 GB with
   `sup` and ~2 min / 14 GB with `hac` on 8 CPU threads. Dorado's CPU and GPU basecalls are not identical (sequences and move

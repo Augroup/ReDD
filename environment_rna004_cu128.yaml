@@ -1,0 +1,41 @@
+# ReDD RNA004 environment for NVIDIA Blackwell (sm_120: RTX 50-series, RTX PRO 6000, B100/B200) and newer GPUs.
+# Identical to environment_rna004.yaml except for torch: the validated torch 2.6.0 (cu124) has no kernels for sm_120
+# and the prediction step fails with "no kernel image is available for execution on the device"; torch 2.7.1+cu128 adds them.
+# Probabilities may differ from torch 2.6.0 at the ~1e-3 level (see README, reproducibility notes).
+#   conda env create -n ReDD_RNA004 --file environment_rna004_cu128.yaml     (run from the repository root)
+name: ReDD_RNA004
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.11
+  - pip
+  - cxx-compiler          # builds the uncalled4 pybind11 extension
+  - zlib
+  - snakemake-minimal=7.32.4
+  - graphviz              # `dot` for dag.pdf
+  - minimap2>=2.26
+  - samtools>=1.18
+  - htslib>=1.18          # bgzip
+  - bedtools
+  - gawk
+  - perl
+  - numpy
+  - pandas
+  - scipy
+  - h5py>=3.14
+  - hdf5plugin
+  - pysam
+  - pybigwig
+  - pybind11
+  - toml
+  - plotly
+  - dash
+  - tblib
+  - pip:
+      - --extra-index-url https://download.pytorch.org/whl/cu128
+      - torch==2.7.1+cu128
+      - pod5
+      - pyslow5
+      - ont-fast5-api
+      - ./uncalled4_ReDD
